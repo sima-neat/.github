@@ -6,8 +6,9 @@ if [[ -z "${ORG_NAME:-}" ]]; then
   exit 1
 fi
 
-if [[ -z "${GITHUB_TOKEN:-}" ]]; then
-  echo "GITHUB_TOKEN is required"
+API_TOKEN="${ORG_ADMIN_TOKEN:-${GITHUB_TOKEN:-}}"
+if [[ -z "${API_TOKEN}" ]]; then
+  echo "Token is required. Set ORG_ADMIN_TOKEN or GITHUB_TOKEN."
   exit 1
 fi
 
@@ -19,23 +20,53 @@ api() {
   local method="$1"
   local url="$2"
   local data="${3:-}"
+  local headers_file
+  local body_file
+  local status
+  headers_file="$(mktemp)"
+  body_file="$(mktemp)"
 
   if [[ -n "$data" ]]; then
-    curl -fsSL \
-      -X "$method" \
-      -H "Accept: application/vnd.github+json" \
-      -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-      -H "X-GitHub-Api-Version: ${API_VERSION}" \
-      "$url" \
-      -d "$data"
+    status="$(
+      curl -sS \
+        -X "$method" \
+        -H "Accept: application/vnd.github+json" \
+        -H "Authorization: Bearer ${API_TOKEN}" \
+        -H "X-GitHub-Api-Version: ${API_VERSION}" \
+        -D "$headers_file" \
+        -o "$body_file" \
+        -w "%{http_code}" \
+        "$url" \
+        -d "$data"
+    )"
   else
-    curl -fsSL \
-      -X "$method" \
-      -H "Accept: application/vnd.github+json" \
-      -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-      -H "X-GitHub-Api-Version: ${API_VERSION}" \
-      "$url"
+    status="$(
+      curl -sS \
+        -X "$method" \
+        -H "Accept: application/vnd.github+json" \
+        -H "Authorization: Bearer ${API_TOKEN}" \
+        -H "X-GitHub-Api-Version: ${API_VERSION}" \
+        -D "$headers_file" \
+        -o "$body_file" \
+        -w "%{http_code}" \
+        "$url"
+    )"
   fi
+
+  if (( status >= 400 )); then
+    echo "GitHub API request failed: ${method} ${url} -> HTTP ${status}" >&2
+    if grep -qi '^x-accepted-github-permissions:' "$headers_file"; then
+      echo "Accepted permissions:" >&2
+      grep -i '^x-accepted-github-permissions:' "$headers_file" >&2
+    fi
+    echo "Response body:" >&2
+    cat "$body_file" >&2
+    rm -f "$headers_file" "$body_file"
+    return 1
+  fi
+
+  cat "$body_file"
+  rm -f "$headers_file" "$body_file"
 }
 
 echo "Fetching existing org rulesets for ${ORG_NAME}..."

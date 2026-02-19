@@ -1,0 +1,38 @@
+name: Enforce Repo Branch Protection
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 * * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - "policies/repo-branch-protection/**"
+      - "scripts/sync-repo-branch-protection.sh"
+      - ".github/workflows/enforce-repo-branch-protection.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    environment: org-policy
+    env:
+      ORG_NAME: sima-neat
+      ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN != '' && secrets.ORG_ADMIN_TOKEN || secrets.GH_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secret
+        run: |
+          if [[ -z "${ORG_ADMIN_TOKEN}" ]]; then
+            echo "Missing secret. Set ORG_ADMIN_TOKEN or GH_TOKEN in environment org-policy."
+            echo "Token must be allowed to administer repositories in this org."
+            exit 1
+          fi
+
+      - name: Sync repo branch protection
+        run: ./scripts/sync-repo-branch-protection.sh

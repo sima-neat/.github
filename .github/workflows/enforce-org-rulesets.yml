@@ -16,9 +16,10 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    environment: org-policy
     env:
       ORG_NAME: sima-neat
-      GITHUB_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN != '' && secrets.ORG_ADMIN_TOKEN || secrets.GH_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,8 +27,8 @@ jobs:
       - name: Validate required secret
         run: |
           if [[ -z "${GITHUB_TOKEN}" ]]; then
-            echo "Missing ORG_ADMIN_TOKEN secret."
-            echo "Create it at org or repo level with permission to manage org rulesets."
+            echo "Missing secret. Set ORG_ADMIN_TOKEN or GH_TOKEN."
+            echo "Token must have permission to manage organization rulesets."
             exit 1
           fi
 

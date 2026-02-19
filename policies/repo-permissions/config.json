@@ -1,0 +1,73 @@
+{
+  "exclude_repos": [],
+  "defaults": {
+    "teams": [],
+    "users": []
+  },
+  "repos": {
+    "core": {
+      "inherit_defaults": true,
+      "teams": [
+        {
+          "slug": "argo",
+          "permission": "maintain"
+        }
+      ],
+      "users": []
+    },
+    "app": {
+      "inherit_defaults": true,
+      "teams": [
+        {
+          "slug": "argo",
+          "permission": "maintain"
+        }
+      ],
+      "users": []
+    },
+    "mixR": {
+      "inherit_defaults": true,
+      "teams": [
+        {
+          "slug": "argo",
+          "permission": "maintain"
+        }
+      ],
+      "users": [
+        {
+          "username": "pranavchandramouli",
+          "permission": "maintain"
+        }
+      ]
+    },
+    ".github": {
+      "inherit_defaults": true,
+      "teams": [],
+      "users": [
+        {
+          "username": "shanguangzai",
+          "permission": "maintain"
+        }
+      ]
+    },
+    "internals": {
+      "inherit_defaults": true,
+      "teams": [
+        {
+          "slug": "argo",
+          "permission": "maintain"
+        }
+      ],
+      "users": [
+        {
+          "username": "manuel-roldan",
+          "permission": "admin"
+        }
+      ]
+    }
+  },
+  "prune_unmanaged": {
+    "teams": false,
+    "users": false
+  }
+}

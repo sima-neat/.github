@@ -129,10 +129,48 @@ protect_branch() {
   local branch="$2"
   local protection_payload="$3"
   local encoded_branch
+  local url
+  local headers_file
+  local body_file
+  local status
   encoded_branch="$(jq -rn --arg b "$branch" '$b|@uri')"
+  url="${API_BASE}/repos/${ORG_NAME}/${repo}/branches/${encoded_branch}/protection"
+  headers_file="$(mktemp)"
+  body_file="$(mktemp)"
 
   echo "Applying protection: ${repo}:${branch}"
-  api PUT "${API_BASE}/repos/${ORG_NAME}/${repo}/branches/${encoded_branch}/protection" "${protection_payload}" >/dev/null
+  status="$(
+    curl -sS \
+      -X PUT \
+      -H "Accept: application/vnd.github+json" \
+      -H "Authorization: Bearer ${API_TOKEN}" \
+      -H "X-GitHub-Api-Version: ${API_VERSION}" \
+      -D "$headers_file" \
+      -o "$body_file" \
+      -w "%{http_code}" \
+      "$url" \
+      -d "$protection_payload"
+  )"
+
+  if [[ "$status" == "403" ]] && grep -q "Upgrade to GitHub Pro or make this repository public to enable this feature." "$body_file"; then
+    echo "Skipping ${repo}:${branch} (branch protection unavailable for private repos on current GitHub plan)"
+    rm -f "$headers_file" "$body_file"
+    return 0
+  fi
+
+  if (( status >= 400 )); then
+    echo "GitHub API request failed: PUT ${url} -> HTTP ${status}" >&2
+    if grep -qi '^x-accepted-github-permissions:' "$headers_file"; then
+      echo "Accepted permissions:" >&2
+      grep -i '^x-accepted-github-permissions:' "$headers_file" >&2
+    fi
+    echo "Response body:" >&2
+    cat "$body_file" >&2
+    rm -f "$headers_file" "$body_file"
+    return 1
+  fi
+
+  rm -f "$headers_file" "$body_file"
 }
 
 main_branch="$(jq -r '.main_branch' "${POLICY_FILE}")"

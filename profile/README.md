@@ -6,8 +6,6 @@ Build production-grade multimedia + ML pipelines without fighting pipeline compl
 
 **SiMa NEAT** is a modern **C++20** library (with **Python bindings**) for building, validating, running, and debugging **GStreamer** pipelines through a stable, composable API.
 
-**NEAT** stands for **Neural Edge Acceleration Toolkit**.
-
 Our mission is simple: make the transition from Nvidia-based application stacks to SiMa as smooth as possible, while preserving the full power and flexibility of GStreamer.
 
 ## Why SiMa-NEAT?

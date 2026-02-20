@@ -1,4 +1,4 @@
-# SiMa-NEAT
+# Neural Edge Acceleration Toolkit (NEAT)
 
 <img src="./neat-logo.png" alt="NEAT Logo" width="50%" />
 

@@ -1,6 +1,6 @@
 # Neural Edge Acceleration Toolkit (NEAT)
 
-<img src="./neat-logo.png" alt="NEAT Logo" width="50%" />
+<img src="./neat-logo.png" alt="NEAT Logo" width="35%" />
 
 Build production-grade multimedia + ML pipelines without fighting pipeline complexity.
 

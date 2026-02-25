@@ -168,7 +168,7 @@ work_folder="$(prompt_default "Runner work folder" "_work")"
 ephemeral="$(prompt_yes_no "Ephemeral runner" "n")"
 replace_existing="$(prompt_yes_no "Replace existing runner with same name" "y")"
 
-install_root_default="$HOME/actions-runner-${org_name}-${runner_name}"
+install_root_default="$PWD/actions-runner-${org_name}-${runner_name}"
 install_root="$(prompt_default "Install directory" "$install_root_default")"
 
 as_service="$(prompt_yes_no "Install and start as service (requires sudo)" "y")"

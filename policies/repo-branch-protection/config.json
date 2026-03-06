@@ -1,4 +1,5 @@
 {
+  "protected_branches": ["main", "develop"],
   "main_branch": "main",
   "main_protection": {
     "required_status_checks": null,

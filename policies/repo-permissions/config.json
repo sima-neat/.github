@@ -36,12 +36,6 @@
           "slug": "argo",
           "permission": "maintain"
         }
-      ],
-      "users": [
-        {
-          "username": "pranavchandramouli",
-          "permission": "maintain"
-        }
       ]
     },
     ".github": {

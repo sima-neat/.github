@@ -173,7 +173,13 @@ protect_branch() {
   rm -f "$headers_file" "$body_file"
 }
 
-main_branch="$(jq -r '.main_branch' "${POLICY_FILE}")"
+mapfile -t protected_branches < <(jq -r '.protected_branches[]?' "${POLICY_FILE}")
+if [[ "${#protected_branches[@]}" -eq 0 ]]; then
+  main_branch="$(jq -r '.main_branch // empty' "${POLICY_FILE}")"
+  if [[ -n "${main_branch}" ]]; then
+    protected_branches=("${main_branch}")
+  fi
+fi
 main_payload="$(jq -c '.main_protection' "${POLICY_FILE}")"
 release_payload="$(jq -c '.release_protection' "${POLICY_FILE}")"
 
@@ -184,11 +190,13 @@ echo "Found ${#repos[@]} active repositories."
 for repo in "${repos[@]}"; do
   echo "--- ${repo}"
 
-  if branch_exists "$repo" "$main_branch"; then
-    protect_branch "$repo" "$main_branch" "$main_payload"
-  else
-    echo "Skipping ${repo}:${main_branch} (branch does not exist)"
-  fi
+  for branch in "${protected_branches[@]}"; do
+    if branch_exists "$repo" "$branch"; then
+      protect_branch "$repo" "$branch" "$main_payload"
+    else
+      echo "Skipping ${repo}:${branch} (branch does not exist)"
+    fi
+  done
 
   mapfile -t release_branches < <(list_release_branches "$repo" | sort -u)
   if [[ "${#release_branches[@]}" -eq 0 ]]; then

@@ -1,0 +1,128 @@
+name: Reusable Sync Install Index
+
+on:
+  workflow_call:
+    inputs:
+      bucket:
+        description: S3 bucket name
+        required: true
+        type: string
+      artifact_root:
+        description: Prefix/folder within bucket, for example insight/download
+        required: true
+        type: string
+      aws_region:
+        description: AWS region (set to auto for Cloudflare R2)
+        required: false
+        default: us-east-1
+        type: string
+      endpoint_url:
+        description: Optional S3 endpoint URL (set for Cloudflare R2)
+        required: false
+        default: ""
+        type: string
+    secrets:
+      aws_access_key_id:
+        required: true
+      aws_secret_access_key:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  sync-index:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.aws_access_key_id }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.aws_secret_access_key }}
+      AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
+      AWS_EC2_METADATA_DISABLED: "true"
+      R2_ENDPOINT_URL: ${{ inputs.endpoint_url }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Ensure required env is configured
+        run: |
+          set -euo pipefail
+          for key in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION GH_TOKEN; do
+            if [[ -z "${!key:-}" ]]; then
+              echo "Missing required value for ${key}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Install aws cli tooling
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install awscli
+
+      - name: Generate branches.json from GitHub API (branches + tags)
+        run: |
+          mkdir -p _work/index
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+          from pathlib import Path
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def paged_list(url_template: str, field: str) -> list[str]:
+              items = []
+              page = 1
+              while True:
+                  req = urllib.request.Request(url_template.format(page=page), headers=headers)
+                  with urllib.request.urlopen(req) as resp:
+                      batch = json.loads(resp.read().decode("utf-8"))
+                  if not batch:
+                      break
+                  for item in batch:
+                      val = str(item.get(field, "")).strip()
+                      if val:
+                          items.append(val)
+                  if len(batch) < 100:
+                      break
+                  page += 1
+              return sorted(set(items))
+
+          branches = paged_list(
+              f"https://api.github.com/repos/{repo}/branches?per_page=100&page={{page}}",
+              "name",
+          )
+          tags = paged_list(
+              f"https://api.github.com/repos/{repo}/tags?per_page=100&page={{page}}",
+              "name",
+          )
+
+          payload = {
+              "branches": branches,
+              "tags": tags,
+              # Backward compatibility for existing installers that still read "releases".
+              "releases": tags,
+          }
+
+          out = Path("_work/index/branches.json")
+          out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps(payload, indent=2))
+          print(f"Wrote {out}")
+          PY
+
+      - name: Upload branches.json to S3-compatible storage
+        run: |
+          set -euo pipefail
+          endpoint_args=()
+          if [[ -n "${R2_ENDPOINT_URL}" ]]; then
+            endpoint_args=(--endpoint-url "${R2_ENDPOINT_URL}")
+          fi
+
+          aws s3 cp "${endpoint_args[@]}" \
+            _work/index/branches.json \
+            "s3://${{ inputs.bucket }}/${{ inputs.artifact_root }}/branches.json" \
+            --content-type application/json

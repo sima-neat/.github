@@ -1,0 +1,271 @@
+name: Reusable Prune Download Artifacts
+
+on:
+  workflow_call:
+    inputs:
+      bucket:
+        description: S3 bucket name
+        required: true
+        type: string
+      artifact_root:
+        description: Prefix/folder within bucket, for example insight/download
+        required: true
+        type: string
+      keep_hours:
+        description: Keep window for non-latest artifacts in hours
+        required: false
+        default: 48
+        type: number
+      dry_run:
+        description: Preview deletions only
+        required: false
+        default: true
+        type: boolean
+      aws_region:
+        description: AWS region (set to auto for Cloudflare R2)
+        required: false
+        default: us-east-1
+        type: string
+      endpoint_url:
+        description: Optional S3 endpoint URL (set for Cloudflare R2)
+        required: false
+        default: ""
+        type: string
+    secrets:
+      aws_access_key_id:
+        required: true
+      aws_secret_access_key:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.aws_access_key_id }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.aws_secret_access_key }}
+      AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
+      AWS_EC2_METADATA_DISABLED: "true"
+      R2_ENDPOINT_URL: ${{ inputs.endpoint_url }}
+      DRY_RUN: ${{ inputs.dry_run }}
+      KEEP_HOURS: ${{ inputs.keep_hours }}
+
+    steps:
+      - name: Ensure required env is configured
+        run: |
+          set -euo pipefail
+          for key in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION; do
+            if [[ -z "${!key:-}" ]]; then
+              echo "Missing required value for ${key}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Install aws cli tooling
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install awscli
+
+      - name: Prune non-latest artifacts older than keep window
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import tempfile
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+
+          bucket = os.environ["INPUT_BUCKET"]
+          root = os.environ["INPUT_ARTIFACT_ROOT"].strip("/")
+          endpoint = os.getenv("R2_ENDPOINT_URL", "").strip()
+          dry_run = os.getenv("DRY_RUN", "true").lower() == "true"
+          keep_hours = int(os.getenv("KEEP_HOURS", "48"))
+          cutoff = datetime.now(timezone.utc) - timedelta(hours=keep_hours)
+
+          meta_re = re.compile(rf"^{re.escape(root)}/([^/]+)/([0-9a-f]{{7,}})\.json$")
+
+          def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
+              proc = subprocess.run(cmd, check=False, capture_output=True, text=True)
+              if check and proc.returncode != 0:
+                  raise RuntimeError(
+                      f"Command failed ({proc.returncode}): {' '.join(cmd)}\n"
+                      f"stdout:\n{proc.stdout}\n\nstderr:\n{proc.stderr}"
+                  )
+              return proc
+
+          def aws_cmd(*args: str) -> list[str]:
+              cmd = ["aws", *args]
+              if endpoint:
+                  cmd.extend(["--endpoint-url", endpoint])
+              return cmd
+
+          def branch_key(name: str) -> str:
+              return name.replace("/", "-").replace(" ", "-")
+
+          with tempfile.TemporaryDirectory(prefix="prune-download-artifacts-") as tmp:
+              tmpdir = Path(tmp)
+              branches_json = tmpdir / "branches.json"
+
+              run(
+                  aws_cmd(
+                      "s3", "cp",
+                      f"s3://{bucket}/{root}/branches.json",
+                      str(branches_json),
+                  )
+              )
+              payload = json.loads(branches_json.read_text(encoding="utf-8"))
+
+              branches = sorted({str(x).strip() for x in payload.get("branches", []) if str(x).strip()})
+              tags = sorted({str(x).strip() for x in payload.get("tags", []) if str(x).strip()})
+              if not tags:
+                  tags = sorted({str(x).strip() for x in payload.get("releases", []) if str(x).strip()})
+
+              tag_keys = {branch_key(tag) for tag in tags}
+
+              contents = []
+              continuation = None
+              while True:
+                  cmd = aws_cmd(
+                      "s3api", "list-objects-v2",
+                      "--bucket", bucket,
+                      "--prefix", f"{root}/",
+                      "--output", "json",
+                  )
+                  if continuation:
+                      cmd.extend(["--continuation-token", continuation])
+                  list_proc = run(cmd)
+                  page = json.loads(list_proc.stdout)
+                  contents.extend(page.get("Contents", []))
+                  if not page.get("IsTruncated"):
+                      break
+                  continuation = page.get("NextContinuationToken")
+                  if not continuation:
+                      break
+
+              key_to_last_modified = {}
+              for obj in contents:
+                  key = str(obj.get("Key", "")).strip()
+                  lm = str(obj.get("LastModified", "")).strip()
+                  if not key or not lm:
+                      continue
+                  key_to_last_modified[key] = datetime.fromisoformat(lm.replace("Z", "+00:00"))
+
+              active_latest_sha = {}
+              for branch in branches:
+                  bkey = branch_key(branch)
+                  latest_file = tmpdir / f"{bkey}.latest.tag"
+                  cp = run(
+                      aws_cmd(
+                          "s3", "cp",
+                          f"s3://{bucket}/{root}/{bkey}/latest.tag",
+                          str(latest_file),
+                      ),
+                      check=False,
+                  )
+                  if cp.returncode != 0:
+                      continue
+                  latest_sha = latest_file.read_text(encoding="utf-8").strip()
+                  if latest_sha:
+                      active_latest_sha[bkey] = latest_sha
+
+              metadata = {}
+              for key, modified in key_to_last_modified.items():
+                  match = meta_re.match(key)
+                  if not match:
+                      continue
+                  bkey, sha = match.group(1), match.group(2)
+                  metadata[key] = {
+                      "branch_key": bkey,
+                      "sha": sha,
+                      "modified": modified,
+                      "wheels": [],
+                  }
+
+              for meta_key in metadata:
+                  local = tmpdir / "meta.json"
+                  cp = run(
+                      aws_cmd(
+                          "s3", "cp",
+                          f"s3://{bucket}/{meta_key}",
+                          str(local),
+                      ),
+                      check=False,
+                  )
+                  if cp.returncode != 0:
+                      continue
+                  try:
+                      doc = json.loads(local.read_text(encoding="utf-8"))
+                  except Exception:
+                      continue
+                  files = []
+                  entries = doc.get("artifacts", [])
+                  if not entries:
+                      entries = doc.get("wheels", [])
+                  for item in entries:
+                      filename = str(item.get("filename", "")).strip()
+                      if filename:
+                          files.append(filename)
+                  metadata[meta_key]["wheels"] = files
+
+              meta_delete = set()
+              for meta_key, info in metadata.items():
+                  bkey = info["branch_key"]
+                  sha = info["sha"]
+                  modified = info["modified"]
+
+                  if bkey in tag_keys:
+                      continue
+                  if modified >= cutoff:
+                      continue
+
+                  latest = active_latest_sha.get(bkey)
+                  if latest is None:
+                      meta_delete.add(meta_key)
+                      continue
+                  if sha != latest:
+                      meta_delete.add(meta_key)
+
+              kept_meta = set(metadata.keys()) - meta_delete
+              protected_wheels = set()
+              for meta_key in kept_meta:
+                  protected_wheels.update(metadata[meta_key]["wheels"])
+
+              wheel_delete = set()
+              for meta_key in meta_delete:
+                  for wheel_name in metadata[meta_key]["wheels"]:
+                      wheel_key = f"{root}/{wheel_name}"
+                      if wheel_name in protected_wheels:
+                          continue
+                      modified = key_to_last_modified.get(wheel_key)
+                      if modified is None:
+                          continue
+                      if modified < cutoff:
+                          wheel_delete.add(wheel_key)
+
+              delete_keys = sorted(meta_delete | wheel_delete)
+
+              print(f"dry_run={dry_run}")
+              print(f"keep_hours={keep_hours}")
+              print(f"cutoff_utc={cutoff.isoformat()}")
+              print(f"active_branches={len(active_latest_sha)}")
+              print(f"metadata_total={len(metadata)}")
+              print(f"delete_candidates={len(delete_keys)}")
+              for key in delete_keys:
+                  print(f"- {key}")
+
+              if dry_run:
+                  print("Dry run enabled; no objects deleted.")
+                  raise SystemExit(0)
+
+              for key in delete_keys:
+                  run(aws_cmd("s3", "rm", f"s3://{bucket}/{key}"))
+              print(f"Deleted {len(delete_keys)} object(s).")
+          PY
+        env:
+          INPUT_BUCKET: ${{ inputs.bucket }}
+          INPUT_ARTIFACT_ROOT: ${{ inputs.artifact_root }}

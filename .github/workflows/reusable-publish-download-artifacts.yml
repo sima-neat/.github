@@ -1,0 +1,279 @@
+name: Reusable Publish Download Artifacts
+
+on:
+  workflow_call:
+    inputs:
+      bucket:
+        description: S3 bucket name
+        required: true
+        type: string
+      artifact_root:
+        description: Prefix/folder within bucket, for example insight/download
+        required: true
+        type: string
+      project_name:
+        description: Project name stored in metadata json
+        required: true
+        type: string
+      artifact_pattern:
+        description: actions/download-artifact pattern
+        required: false
+        default: wheel-*
+        type: string
+      artifact_glob:
+        description: Artifact file glob after download
+        required: false
+        default: dist/*.whl
+        type: string
+      min_artifact_count:
+        description: Minimum expected file count for artifact_glob
+        required: false
+        default: 1
+        type: number
+      aws_region:
+        description: AWS region (set to auto for Cloudflare R2)
+        required: false
+        default: us-east-1
+        type: string
+      endpoint_url:
+        description: Optional S3 endpoint URL (set for Cloudflare R2)
+        required: false
+        default: ""
+        type: string
+    secrets:
+      aws_access_key_id:
+        required: true
+      aws_secret_access_key:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.aws_access_key_id }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.aws_secret_access_key }}
+      AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
+      AWS_EC2_METADATA_DISABLED: "true"
+      R2_ENDPOINT_URL: ${{ inputs.endpoint_url }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Ensure required env is configured
+        run: |
+          set -euo pipefail
+          for key in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION; do
+            if [[ -z "${!key:-}" ]]; then
+              echo "Missing required value for ${key}" >&2
+              exit 1
+            fi
+          done
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: ${{ inputs.artifact_pattern }}
+          path: dist
+          merge-multiple: true
+
+      - name: Validate downloaded artifacts
+        run: |
+          set -euo pipefail
+          ls -lah dist || true
+          count=$(python3 - <<'PY'
+          import glob
+          import os
+
+          pattern = os.environ["INPUT_ARTIFACT_GLOB"]
+          files = [p for p in glob.glob(pattern) if os.path.isfile(p)]
+          print(len(files))
+          PY
+          )
+          if [[ "${count}" -lt "${{ inputs.min_artifact_count }}" ]]; then
+            echo "Expected at least ${{ inputs.min_artifact_count }} artifact(s), found ${count}" >&2
+            exit 1
+          fi
+        env:
+          INPUT_ARTIFACT_GLOB: ${{ inputs.artifact_glob }}
+
+      - name: Install aws cli tooling
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install awscli
+
+      - name: Upload artifacts to S3-compatible storage
+        run: |
+          set -euo pipefail
+          endpoint_args=()
+          if [[ -n "${R2_ENDPOINT_URL}" ]]; then
+            endpoint_args=(--endpoint-url "${R2_ENDPOINT_URL}")
+          fi
+
+          while IFS= read -r artifact; do
+            [[ -z "${artifact}" ]] && continue
+            base="$(basename "${artifact}")"
+            aws s3 cp "${endpoint_args[@]}" \
+              "${artifact}" \
+              "s3://${{ inputs.bucket }}/${{ inputs.artifact_root }}/${base}"
+          done < <(
+            python3 - <<'PY'
+            import glob
+            import os
+
+            pattern = os.environ["INPUT_ARTIFACT_GLOB"]
+            for path in sorted(glob.glob(pattern)):
+                if os.path.isfile(path):
+                    print(path)
+            PY
+          )
+        env:
+          INPUT_ARTIFACT_GLOB: ${{ inputs.artifact_glob }}
+
+      - name: Generate and upload build metadata + latest.tag
+        run: |
+          set -euo pipefail
+          BRANCH_RAW="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          BRANCH_KEY="$(echo "${BRANCH_RAW}" | tr '/ ' '--')"
+          SHORT_SHA="$(printf '%s' "${GITHUB_SHA}" | cut -c1-7)"
+          mkdir -p _work/index
+
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          branch = os.environ.get("GITHUB_HEAD_REF") or os.environ["GITHUB_REF_NAME"]
+          branch_key = branch.replace("/", "-").replace(" ", "-")
+          short_sha = os.environ["GITHUB_SHA"][:7]
+
+          artifacts = []
+          wheels = []
+          for artifact in sorted(Path("dist").glob("*")):
+              if not artifact.is_file():
+                  continue
+              h = hashlib.sha256()
+              with artifact.open("rb") as f:
+                  for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                      h.update(chunk)
+              entry = {
+                  "filename": artifact.name,
+                  "size": artifact.stat().st_size,
+                  "sha256": h.hexdigest(),
+              }
+              artifacts.append(entry)
+              if artifact.suffix == ".whl":
+                  platform_tag = artifact.name.rsplit("-", 1)[-1].replace(".whl", "")
+                  wheel_entry = dict(entry)
+                  wheel_entry["platform_tag"] = platform_tag
+                  wheels.append(wheel_entry)
+
+          payload = {
+              "project": os.environ["INPUT_PROJECT_NAME"],
+              "branch": branch,
+              "branch_key": branch_key,
+              "short_sha": short_sha,
+              "commit": os.environ["GITHUB_SHA"],
+              "created_at_utc": datetime.now(timezone.utc).isoformat(),
+              "artifacts": artifacts,
+              "wheels": wheels,
+          }
+
+          out = Path("_work/index") / f"{short_sha}.json"
+          out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+          Path("_work/index/latest.tag").write_text(short_sha + "\n", encoding="utf-8")
+          print(f"wrote {out}")
+          PY
+
+          endpoint_args=()
+          if [[ -n "${R2_ENDPOINT_URL}" ]]; then
+            endpoint_args=(--endpoint-url "${R2_ENDPOINT_URL}")
+          fi
+
+          aws s3 cp "${endpoint_args[@]}" \
+            "_work/index/${SHORT_SHA}.json" \
+            "s3://${{ inputs.bucket }}/${{ inputs.artifact_root }}/${BRANCH_KEY}/${SHORT_SHA}.json" \
+            --content-type application/json
+
+          aws s3 cp "${endpoint_args[@]}" \
+            _work/index/latest.tag \
+            "s3://${{ inputs.bucket }}/${{ inputs.artifact_root }}/${BRANCH_KEY}/latest.tag"
+        env:
+          INPUT_PROJECT_NAME: ${{ inputs.project_name }}
+
+      - name: Refresh branches.json (branches + tags)
+        run: |
+          set -euo pipefail
+          mkdir -p _work/index
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+          from pathlib import Path
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def paged_list(url_template: str, field: str) -> list[str]:
+              items = []
+              page = 1
+              while True:
+                  url = url_template.format(page=page)
+                  req = urllib.request.Request(url, headers=headers)
+                  with urllib.request.urlopen(req) as resp:
+                      batch = json.loads(resp.read().decode("utf-8"))
+                  if not batch:
+                      break
+                  for item in batch:
+                      val = str(item.get(field, "")).strip()
+                      if val:
+                          items.append(val)
+                  if len(batch) < 100:
+                      break
+                  page += 1
+              return sorted(set(items))
+
+          branches = paged_list(
+              f"https://api.github.com/repos/{repo}/branches?per_page=100&page={{page}}",
+              "name",
+          )
+          tags = paged_list(
+              f"https://api.github.com/repos/{repo}/tags?per_page=100&page={{page}}",
+              "name",
+          )
+
+          payload = {
+              "branches": branches,
+              "tags": tags,
+              # Backward compatibility for existing installers that still read "releases".
+              "releases": tags,
+          }
+
+          out = Path("_work/index/branches.json")
+          out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps(payload, indent=2))
+          print(f"Wrote {out}")
+          PY
+
+          endpoint_args=()
+          if [[ -n "${R2_ENDPOINT_URL}" ]]; then
+            endpoint_args=(--endpoint-url "${R2_ENDPOINT_URL}")
+          fi
+
+          aws s3 cp "${endpoint_args[@]}" \
+            _work/index/branches.json \
+            "s3://${{ inputs.bucket }}/${{ inputs.artifact_root }}/branches.json" \
+            --content-type application/json

@@ -1,0 +1,20 @@
+{
+  "exclude_repos": [],
+  "public_repos_only": true,
+  "environments": [
+    {
+      "name": "PyPi",
+      "deployment_branch_policy": {
+        "protected_branches": true,
+        "custom_branch_policies": false
+      }
+    },
+    {
+      "name": "CloudFlare-R2",
+      "deployment_branch_policy": {
+        "protected_branches": true,
+        "custom_branch_policies": false
+      }
+    }
+  ]
+}

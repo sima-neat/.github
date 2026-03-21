@@ -33,6 +33,26 @@
       ],
       "users": []
     },
+    "elxr-sdk": {
+      "inherit_defaults": true,
+      "teams": [
+        {
+          "slug": "argo",
+          "permission": "maintain"
+        }
+      ],
+      "users": []
+    },
+    "insight": {
+      "inherit_defaults": true,
+      "teams": [
+        {
+          "slug": "argo",
+          "permission": "maintain"
+        }
+      ],
+      "users": []
+    },
     "mixR": {
       "inherit_defaults": true,
       "teams": [

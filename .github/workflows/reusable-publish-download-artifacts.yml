@@ -7,6 +7,10 @@ on:
         description: S3 bucket name
         required: true
         type: string
+      environment_name:
+        description: Repository environment name used to scope secrets
+        required: true
+        type: string
       artifact_root:
         description: Prefix/folder within bucket, for example insight/download
         required: true
@@ -54,6 +58,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment_name }}
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.aws_access_key_id }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.aws_secret_access_key }}

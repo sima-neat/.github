@@ -5,14 +5,20 @@
     {
       "name": "PyPi",
       "deployment_branch_policy": {
-        "protected_branches": true,
-        "custom_branch_policies": false
-      }
+        "protected_branches": false,
+        "custom_branch_policies": true
+      },
+      "deployment_branch_policies": [
+        {
+          "type": "tag",
+          "name": "v*"
+        }
+      ]
     },
     {
       "name": "CloudFlare-R2",
       "deployment_branch_policy": {
-        "protected_branches": true,
+        "protected_branches": false,
         "custom_branch_policies": false
       }
     }

@@ -45,6 +45,8 @@ on:
         required: true
       aws_secret_access_key:
         required: true
+      r2_account_id:
+        required: false
 
 permissions:
   contents: read
@@ -58,6 +60,7 @@ jobs:
       AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
       AWS_EC2_METADATA_DISABLED: "true"
       R2_ENDPOINT_URL: ${{ inputs.endpoint_url }}
+      R2_ACCOUNT_ID: ${{ secrets.r2_account_id }}
       GH_TOKEN: ${{ github.token }}
 
     steps:
@@ -112,8 +115,12 @@ jobs:
         run: |
           set -euo pipefail
           endpoint_args=()
-          if [[ -n "${R2_ENDPOINT_URL}" ]]; then
-            endpoint_args=(--endpoint-url "${R2_ENDPOINT_URL}")
+          resolved_endpoint="${R2_ENDPOINT_URL}"
+          if [[ -z "${resolved_endpoint}" && -n "${R2_ACCOUNT_ID:-}" ]]; then
+            resolved_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          fi
+          if [[ -n "${resolved_endpoint}" ]]; then
+            endpoint_args=(--endpoint-url "${resolved_endpoint}")
           fi
 
           while IFS= read -r artifact; do
@@ -194,8 +201,12 @@ jobs:
           PY
 
           endpoint_args=()
-          if [[ -n "${R2_ENDPOINT_URL}" ]]; then
-            endpoint_args=(--endpoint-url "${R2_ENDPOINT_URL}")
+          resolved_endpoint="${R2_ENDPOINT_URL}"
+          if [[ -z "${resolved_endpoint}" && -n "${R2_ACCOUNT_ID:-}" ]]; then
+            resolved_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          fi
+          if [[ -n "${resolved_endpoint}" ]]; then
+            endpoint_args=(--endpoint-url "${resolved_endpoint}")
           fi
 
           aws s3 cp "${endpoint_args[@]}" \
@@ -269,8 +280,12 @@ jobs:
           PY
 
           endpoint_args=()
-          if [[ -n "${R2_ENDPOINT_URL}" ]]; then
-            endpoint_args=(--endpoint-url "${R2_ENDPOINT_URL}")
+          resolved_endpoint="${R2_ENDPOINT_URL}"
+          if [[ -z "${resolved_endpoint}" && -n "${R2_ACCOUNT_ID:-}" ]]; then
+            resolved_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          fi
+          if [[ -n "${resolved_endpoint}" ]]; then
+            endpoint_args=(--endpoint-url "${resolved_endpoint}")
           fi
 
           aws s3 cp "${endpoint_args[@]}" \

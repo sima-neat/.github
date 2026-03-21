@@ -36,6 +36,8 @@ on:
         required: true
       aws_secret_access_key:
         required: true
+      r2_account_id:
+        required: false
 
 permissions:
   contents: read
@@ -49,6 +51,7 @@ jobs:
       AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
       AWS_EC2_METADATA_DISABLED: "true"
       R2_ENDPOINT_URL: ${{ inputs.endpoint_url }}
+      R2_ACCOUNT_ID: ${{ secrets.r2_account_id }}
       DRY_RUN: ${{ inputs.dry_run }}
       KEEP_HOURS: ${{ inputs.keep_hours }}
 
@@ -83,6 +86,10 @@ jobs:
           bucket = os.environ["INPUT_BUCKET"]
           root = os.environ["INPUT_ARTIFACT_ROOT"].strip("/")
           endpoint = os.getenv("R2_ENDPOINT_URL", "").strip()
+          if not endpoint:
+              r2_account = os.getenv("R2_ACCOUNT_ID", "").strip()
+              if r2_account:
+                  endpoint = f"https://{r2_account}.r2.cloudflarestorage.com"
           dry_run = os.getenv("DRY_RUN", "true").lower() == "true"
           keep_hours = int(os.getenv("KEEP_HOURS", "48"))
           cutoff = datetime.now(timezone.utc) - timedelta(hours=keep_hours)

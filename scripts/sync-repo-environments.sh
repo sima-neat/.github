@@ -116,6 +116,82 @@ create_or_update_environment() {
   api PUT "${API_BASE}/repos/${ORG_NAME}/${repo}/environments/${encoded_name}" "$payload" >/dev/null
 }
 
+list_environment_deployment_policies() {
+  local repo="$1"
+  local env_name="$2"
+  local encoded_name
+  encoded_name="$(jq -rn --arg v "$env_name" '$v|@uri')"
+  local page=1
+
+  while true; do
+    local url="${API_BASE}/repos/${ORG_NAME}/${repo}/environments/${encoded_name}/deployment-branch-policies?per_page=${PER_PAGE}&page=${page}"
+    local resp
+    resp="$(api GET "$url")"
+    local count
+    count="$(jq '.branch_policies | length' <<<"$resp")"
+    if [[ "$count" == "0" ]]; then
+      break
+    fi
+    jq -c '.branch_policies[]' <<<"$resp"
+    if [[ "$count" -lt "$PER_PAGE" ]]; then
+      break
+    fi
+    page=$((page + 1))
+  done
+}
+
+sync_environment_deployment_policies() {
+  local repo="$1"
+  local env_name="$2"
+  local desired_json="$3"
+  local encoded_name
+  encoded_name="$(jq -rn --arg v "$env_name" '$v|@uri')"
+
+  local existing_json="[]"
+  while IFS= read -r row; do
+    [[ -z "$row" ]] && continue
+    existing_json="$(jq -c --argjson item "$row" '. + [$item]' <<<"$existing_json")"
+  done < <(list_environment_deployment_policies "$repo" "$env_name")
+
+  while IFS= read -r item; do
+    [[ -z "$item" ]] && continue
+    local ptype
+    local pname
+    ptype="$(jq -r '.type // empty' <<<"$item")"
+    pname="$(jq -r '.name // empty' <<<"$item")"
+
+    if [[ "$ptype" != "branch" && "$ptype" != "tag" ]]; then
+      echo "Invalid deployment_branch_policies.type '${ptype}' for environment '${env_name}' in repo '${repo}'" >&2
+      exit 1
+    fi
+    if [[ -z "$pname" ]]; then
+      echo "Missing deployment_branch_policies.name for environment '${env_name}' in repo '${repo}'" >&2
+      exit 1
+    fi
+
+    if ! jq -e --arg t "$ptype" --arg n "$pname" '.[] | select(.type == $t and .name == $n)' <<<"$existing_json" >/dev/null; then
+      echo "Adding deployment policy ${ptype}:${pname} to ${repo}:${env_name}"
+      payload="$(jq -cn --arg name "$pname" --arg type "$ptype" '{name: $name, type: $type}')"
+      api POST "${API_BASE}/repos/${ORG_NAME}/${repo}/environments/${encoded_name}/deployment-branch-policies" "$payload" >/dev/null
+    fi
+  done < <(jq -c '.[]' <<<"$desired_json")
+
+  while IFS= read -r item; do
+    [[ -z "$item" ]] && continue
+    local pid
+    local ptype
+    local pname
+    pid="$(jq -r '.id' <<<"$item")"
+    ptype="$(jq -r '.type // empty' <<<"$item")"
+    pname="$(jq -r '.name // empty' <<<"$item")"
+
+    if ! jq -e --arg t "$ptype" --arg n "$pname" '.[] | select(.type == $t and .name == $n)' <<<"$desired_json" >/dev/null; then
+      echo "Removing unmanaged deployment policy ${ptype}:${pname} from ${repo}:${env_name}"
+      api DELETE "${API_BASE}/repos/${ORG_NAME}/${repo}/environments/${encoded_name}/deployment-branch-policies/${pid}" >/dev/null
+    fi
+  done < <(jq -c '.[]' <<<"$existing_json")
+}
+
 exclude_repos_json="$(jq -c '.exclude_repos // []' "$POLICY_FILE")"
 public_repos_only="$(jq -r '.public_repos_only // true' "$POLICY_FILE")"
 env_count="$(jq '.environments | length' "$POLICY_FILE")"
@@ -153,6 +229,11 @@ for repo in "${repos[@]}"; do
       '{deployment_branch_policy: {protected_branches: $protected, custom_branch_policies: $custom}}')"
 
     create_or_update_environment "$repo" "$env_name" "$payload"
+
+    desired_policies_json="$(jq -c '.deployment_branch_policies // []' <<<"$item")"
+    if [[ "$custom_branch_policies" == "true" ]]; then
+      sync_environment_deployment_policies "$repo" "$env_name" "$desired_policies_json"
+    fi
   done < <(jq -c '.environments[]' "$POLICY_FILE")
 done
 

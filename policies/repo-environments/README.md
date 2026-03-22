@@ -15,9 +15,15 @@ This policy currently standardizes:
 - `PyPi`
 - `CloudFlare-R2`
 
-Each is configured with deployment branch policy:
+`CloudFlare-R2` is configured with:
 
-- `protected_branches: true`
+- `protected_branches: false`
 - `custom_branch_policies: false`
 
-This means deployments are allowed only from protected branches.
+This means deployments are allowed from all branches and tags.
+
+## PyPi restriction
+
+`PyPi` is configured with custom deployment policies and only allows deployments from tags matching:
+
+- `v*`

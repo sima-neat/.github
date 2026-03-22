@@ -18,7 +18,12 @@ This policy currently standardizes:
 `CloudFlare-R2` is configured with:
 
 - `protected_branches: false`
-- `custom_branch_policies: false`
+- `custom_branch_policies: true`
+
+Allowed deployment refs:
+
+- branch: `*`
+- tag: `*`
 
 This means deployments are allowed from all branches and tags.
 

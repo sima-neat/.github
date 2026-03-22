@@ -220,8 +220,24 @@ for repo in "${repos[@]}"; do
       exit 1
     fi
 
-    protected_branches="$(jq -r '.deployment_branch_policy.protected_branches // true' <<<"$item")"
-    custom_branch_policies="$(jq -r '.deployment_branch_policy.custom_branch_policies // false' <<<"$item")"
+    protected_branches="$(jq -r '
+      if (.deployment_branch_policy | type) == "object" and (.deployment_branch_policy | has("protected_branches"))
+      then .deployment_branch_policy.protected_branches
+      else true
+      end
+    ' <<<"$item")"
+    custom_branch_policies="$(jq -r '
+      if (.deployment_branch_policy | type) == "object" and (.deployment_branch_policy | has("custom_branch_policies"))
+      then .deployment_branch_policy.custom_branch_policies
+      else false
+      end
+    ' <<<"$item")"
+
+    if [[ "$protected_branches" == "$custom_branch_policies" ]]; then
+      echo "Invalid deployment_branch_policy for environment '${env_name}' in repo '${repo}':" >&2
+      echo "protected_branches and custom_branch_policies cannot be equal (${protected_branches})." >&2
+      exit 1
+    fi
 
     payload="$(jq -cn \
       --argjson protected "$protected_branches" \

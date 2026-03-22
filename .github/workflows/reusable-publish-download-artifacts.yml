@@ -95,15 +95,7 @@ jobs:
         run: |
           set -euo pipefail
           ls -lah dist || true
-          count=$(python3 - <<'PY'
-          import glob
-          import os
-
-          pattern = os.environ["INPUT_ARTIFACT_GLOB"]
-          files = [p for p in glob.glob(pattern) if os.path.isfile(p)]
-          print(len(files))
-          PY
-          )
+          count="$(python3 -c 'import glob, os; p=os.environ["INPUT_ARTIFACT_GLOB"]; print(sum(1 for x in glob.glob(p) if os.path.isfile(x)))')"
           if [[ "${count}" -lt "${{ inputs.min_artifact_count }}" ]]; then
             echo "Expected at least ${{ inputs.min_artifact_count }} artifact(s), found ${count}" >&2
             exit 1
@@ -135,15 +127,7 @@ jobs:
               "${artifact}" \
               "s3://${{ inputs.bucket }}/${{ inputs.artifact_root }}/${base}"
           done < <(
-            python3 - <<'PY'
-            import glob
-            import os
-
-            pattern = os.environ["INPUT_ARTIFACT_GLOB"]
-            for path in sorted(glob.glob(pattern)):
-                if os.path.isfile(path):
-                    print(path)
-            PY
+            python3 -c 'import glob, os; p=os.environ["INPUT_ARTIFACT_GLOB"]; [print(x) for x in sorted(glob.glob(p)) if os.path.isfile(x)]'
           )
         env:
           INPUT_ARTIFACT_GLOB: ${{ inputs.artifact_glob }}

@@ -27,6 +27,14 @@
           "name": "*"
         },
         {
+          "type": "branch",
+          "name": "*/*"
+        },
+        {
+          "type": "branch",
+          "name": "*/*/*"
+        },
+        {
           "type": "tag",
           "name": "*"
         }

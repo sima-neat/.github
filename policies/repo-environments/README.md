@@ -23,6 +23,8 @@ This policy currently standardizes:
 Allowed deployment refs:
 
 - branch: `*`
+- branch: `*/*`
+- branch: `*/*/*`
 - tag: `*`
 
 This means deployments are allowed from all branches and tags.

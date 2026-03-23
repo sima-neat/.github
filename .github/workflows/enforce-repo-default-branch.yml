@@ -1,0 +1,38 @@
+name: Enforce Repo Default Branch
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "55 * * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - "policies/repo-default-branch/**"
+      - "scripts/sync-repo-default-branch.sh"
+      - ".github/workflows/enforce-repo-default-branch.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    environment: org-policy
+    env:
+      ORG_NAME: sima-neat
+      ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN != '' && secrets.ORG_ADMIN_TOKEN || secrets.GH_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secret
+        run: |
+          if [[ -z "${ORG_ADMIN_TOKEN}" ]]; then
+            echo "Missing secret. Set ORG_ADMIN_TOKEN or GH_TOKEN in environment org-policy."
+            echo "Token must be allowed to administer repositories in this org."
+            exit 1
+          fi
+
+      - name: Sync repo default branch
+        run: ./scripts/sync-repo-default-branch.sh

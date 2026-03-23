@@ -1,0 +1,4 @@
+{
+  "branch_priority": ["develop", "main"],
+  "exclude_repos": []
+}

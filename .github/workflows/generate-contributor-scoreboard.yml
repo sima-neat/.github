@@ -18,7 +18,7 @@ permissions:
   issues: read
 
 jobs:
-  generate:
+  build:
     runs-on: ubuntu-latest
     environment: org-policy
     env:
@@ -52,3 +52,31 @@ jobs:
         with:
           name: contributor-scoreboard
           path: _work/contributor-scoreboard/
+
+      - name: Prepare Pages site artifact
+        run: |
+          mkdir -p _site
+          cp ./metrics/contributor-scoreboard/site/index.html ./_site/index.html
+          cp ./_work/contributor-scoreboard/scoreboard.json ./_site/scoreboard.json
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages site
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Contributor Scoreboard</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f5f7fb;
+        --panel: #ffffff;
+        --panel-alt: #eef2ff;
+        --text: #152033;
+        --muted: #5b6780;
+        --border: #d7deea;
+        --accent: #1f6feb;
+        --accent-soft: #dbeafe;
+        --gold: #f59e0b;
+        --silver: #94a3b8;
+        --bronze: #b45309;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top right, #dbeafe 0, rgba(219, 234, 254, 0) 28rem),
+          linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+        color: var(--text);
+      }
+
+      main {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 48px 20px 64px;
+      }
+
+      .hero {
+        display: grid;
+        gap: 12px;
+        margin-bottom: 28px;
+      }
+
+      .eyebrow {
+        font-size: 0.85rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 4vw, 3.25rem);
+        line-height: 1.05;
+      }
+
+      .subtitle {
+        margin: 0;
+        max-width: 52rem;
+        color: var(--muted);
+        font-size: 1rem;
+        line-height: 1.6;
+      }
+
+      .meta-grid,
+      .podium {
+        display: grid;
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+
+      .meta-grid {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+
+      .podium {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 18px 20px;
+        box-shadow: 0 14px 32px rgba(15, 23, 42, 0.06);
+      }
+
+      .card-label {
+        margin: 0 0 10px;
+        color: var(--muted);
+        font-size: 0.82rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .card-value {
+        margin: 0;
+        font-size: 1.6rem;
+        font-weight: 700;
+      }
+
+      .podium .card {
+        background: linear-gradient(180deg, var(--panel) 0%, #fafcff 100%);
+      }
+
+      .podium-rank {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 2.2rem;
+        padding: 0.3rem 0.65rem;
+        border-radius: 999px;
+        font-size: 0.9rem;
+        font-weight: 800;
+        color: #fff;
+      }
+
+      .rank-1 { background: var(--gold); }
+      .rank-2 { background: var(--silver); }
+      .rank-3 { background: var(--bronze); }
+
+      .contributor-name {
+        margin: 14px 0 4px;
+        font-size: 1.2rem;
+        font-weight: 700;
+      }
+
+      .contributor-score {
+        margin: 0 0 16px;
+        color: var(--muted);
+      }
+
+      .component-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+
+      .component {
+        background: var(--panel-alt);
+        border-radius: 14px;
+        padding: 10px 12px;
+      }
+
+      .component dt,
+      .component dd {
+        margin: 0;
+      }
+
+      .component dt {
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
+      .component dd {
+        margin-top: 4px;
+        font-size: 1.05rem;
+        font-weight: 700;
+      }
+
+      .table-card {
+        overflow: hidden;
+      }
+
+      .table-scroll {
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 760px;
+      }
+
+      th,
+      td {
+        padding: 14px 12px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      th {
+        color: var(--muted);
+        font-size: 0.82rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      td.numeric,
+      th.numeric {
+        text-align: right;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      tbody tr:nth-child(1) {
+        background: rgba(245, 158, 11, 0.08);
+      }
+
+      .notes {
+        margin-top: 24px;
+        padding-left: 1.1rem;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      .footer {
+        margin-top: 24px;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      @media (max-width: 720px) {
+        main {
+          padding-top: 32px;
+        }
+
+        .component-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Internal Engineering View</p>
+        <h1>Contributor Scoreboard</h1>
+        <p class="subtitle">
+          A custom leaderboard for merged pull requests, filtered code churn, and
+          review activity. This does not change GitHub’s built-in contributor
+          graph. It gives the team a cleaner internal view than commit count.
+        </p>
+      </section>
+
+      <section class="meta-grid" id="meta-grid"></section>
+      <section class="podium" id="podium"></section>
+
+      <section class="card table-card">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Contributor</th>
+                <th class="numeric">Score</th>
+                <th class="numeric">Delivery</th>
+                <th class="numeric">Code</th>
+                <th class="numeric">Review</th>
+                <th class="numeric">Merged PRs</th>
+                <th class="numeric">Filtered churn</th>
+                <th class="numeric">Review points</th>
+              </tr>
+            </thead>
+            <tbody id="scoreboard-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <ul class="notes" id="notes"></ul>
+      <p class="footer">
+        Raw data:
+        <a href="./scoreboard.json">scoreboard.json</a>
+      </p>
+    </main>
+
+    <script>
+      function formatNumber(value, digits = 1) {
+        return new Intl.NumberFormat(undefined, {
+          minimumFractionDigits: digits,
+          maximumFractionDigits: digits,
+        }).format(value);
+      }
+
+      function formatInteger(value) {
+        return new Intl.NumberFormat().format(value);
+      }
+
+      function createMetaCard(label, value) {
+        const card = document.createElement("article");
+        card.className = "card";
+        card.innerHTML = `
+          <p class="card-label">${label}</p>
+          <p class="card-value">${value}</p>
+        `;
+        return card;
+      }
+
+      function renderMeta(payload) {
+        const metaGrid = document.getElementById("meta-grid");
+        metaGrid.replaceChildren(
+          createMetaCard("Repos", payload.repos.join(", ")),
+          createMetaCard("Window", `${payload.window_days} days`),
+          createMetaCard(
+            "Generated",
+            new Date(payload.generated_at).toLocaleString()
+          ),
+          createMetaCard(
+            "Weights",
+            `D ${payload.weights.delivery} / C ${payload.weights.code} / R ${payload.weights.review}`
+          )
+        );
+      }
+
+      function renderPodium(contributors) {
+        const podium = document.getElementById("podium");
+        podium.replaceChildren();
+        contributors.slice(0, 3).forEach((entry) => {
+          const article = document.createElement("article");
+          article.className = "card";
+          article.innerHTML = `
+            <span class="podium-rank rank-${entry.rank}">#${entry.rank}</span>
+            <h2 class="contributor-name">${entry.login}</h2>
+            <p class="contributor-score">Score ${formatNumber(entry.score)}</p>
+            <dl class="component-grid">
+              <div class="component">
+                <dt>Delivery</dt>
+                <dd>${formatNumber(entry.components.delivery)}</dd>
+              </div>
+              <div class="component">
+                <dt>Code</dt>
+                <dd>${formatNumber(entry.components.code)}</dd>
+              </div>
+              <div class="component">
+                <dt>Review</dt>
+                <dd>${formatNumber(entry.components.review)}</dd>
+              </div>
+            </dl>
+          `;
+          podium.appendChild(article);
+        });
+      }
+
+      function renderTable(contributors) {
+        const body = document.getElementById("scoreboard-body");
+        body.replaceChildren();
+        contributors.forEach((entry) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${entry.rank}</td>
+            <td>${entry.login}</td>
+            <td class="numeric">${formatNumber(entry.score)}</td>
+            <td class="numeric">${formatNumber(entry.components.delivery)}</td>
+            <td class="numeric">${formatNumber(entry.components.code)}</td>
+            <td class="numeric">${formatNumber(entry.components.review)}</td>
+            <td class="numeric">${formatInteger(entry.raw.merged_prs)}</td>
+            <td class="numeric">${formatInteger(entry.raw.filtered_churn)}</td>
+            <td class="numeric">${formatNumber(entry.raw.review_points)}</td>
+          `;
+          body.appendChild(row);
+        });
+      }
+
+      function renderNotes(payload) {
+        const notes = document.getElementById("notes");
+        const items = [
+          "Delivery counts merged pull requests in the configured repo scope.",
+          "Code uses additions + deletions after path exclusions.",
+          "Review uses review submissions and inline review comments on other authors' pull requests.",
+        ];
+        if (payload.truncated_repos.length > 0) {
+          items.push(
+            `Some repositories hit the configured PR cap: ${payload.truncated_repos.join(", ")}.`
+          );
+        }
+        notes.replaceChildren(
+          ...items.map((text) => {
+            const item = document.createElement("li");
+            item.textContent = text;
+            return item;
+          })
+        );
+      }
+
+      async function main() {
+        const response = await fetch("./scoreboard.json", { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`Failed to load scoreboard.json (${response.status})`);
+        }
+        const payload = await response.json();
+        renderMeta(payload);
+        renderPodium(payload.contributors);
+        renderTable(payload.contributors);
+        renderNotes(payload);
+      }
+
+      main().catch((error) => {
+        const notes = document.getElementById("notes");
+        notes.replaceChildren();
+        const item = document.createElement("li");
+        item.textContent = `Unable to load the contributor scoreboard: ${error.message}`;
+        notes.appendChild(item);
+      });
+    </script>
+  </body>
+</html>

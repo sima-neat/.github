@@ -37,6 +37,7 @@ The workflow writes:
 - a markdown summary to the workflow summary page
 - a JSON artifact with the full ranked contributor list, raw metrics, and
   normalized component scores
+- a GitHub Pages site that renders the latest scoreboard from `scoreboard.json`
 
 ## Execution controls
 
@@ -44,6 +45,15 @@ The config also includes:
 
 - `max_pull_requests_per_repo`: hard cap for merged PRs fetched per repository
 - `request_workers`: number of parallel workers used for per-PR detail fetches
+
+## Pages publication
+
+The site template lives in `metrics/contributor-scoreboard/site/index.html`.
+The workflow copies that static file plus the generated `scoreboard.json` into a
+Pages artifact and deploys it with GitHub Pages.
+
+The repository still needs a one-time GitHub Pages setup that uses GitHub
+Actions as the publishing source.
 
 ## Caveats
 

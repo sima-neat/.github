@@ -1,7 +1,28 @@
 {
-  "version": 1,
-  "window_days": 90,
-  "repos": ["apps"],
+  "version": 2,
+  "window_days": null,
+  "scoreboards": [
+    {
+      "key": "all-repos",
+      "title": "All Repos",
+      "repos": ["apps", "elxr-sdk", "insight"]
+    },
+    {
+      "key": "apps",
+      "title": "apps",
+      "repos": ["apps"]
+    },
+    {
+      "key": "elxr-sdk",
+      "title": "elxr-sdk",
+      "repos": ["elxr-sdk"]
+    },
+    {
+      "key": "insight",
+      "title": "insight",
+      "repos": ["insight"]
+    }
+  ],
   "weights": {
     "delivery": 0.5,
     "code": 0.3,
@@ -45,6 +66,6 @@
     "*.lock",
     "**/*.lock"
   ],
-  "max_pull_requests_per_repo": 200,
+  "max_pull_requests_per_repo": 1000,
   "request_workers": 8
 }

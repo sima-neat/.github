@@ -2,10 +2,22 @@
 
 This module generates a single contributor score from GitHub pull request data.
 
-## Initial scope
+## Current scope
 
-The first rollout is limited to the `apps` repository. Scope is configured in
-`config.json` and can expand later without changing the scoring code.
+The current rollout uses all-time data from the public repositories:
+
+- `apps`
+- `elxr-sdk`
+- `insight`
+
+The Pages site renders four scoreboards on one page:
+
+- `All Repos`
+- `apps`
+- `elxr-sdk`
+- `insight`
+
+Scope is configured in `config.json`.
 
 ## Score formula
 
@@ -35,8 +47,8 @@ pattern list is defined in `config.json`.
 The workflow writes:
 
 - a markdown summary to the workflow summary page
-- a JSON artifact with the full ranked contributor list, raw metrics, and
-  normalized component scores
+- a JSON artifact with the configured scoreboards, raw metrics, and normalized
+  component scores
 - a GitHub Pages site that renders the latest scoreboard from `scoreboard.json`
 
 ## Execution controls
@@ -45,6 +57,14 @@ The config also includes:
 
 - `max_pull_requests_per_repo`: hard cap for merged PRs fetched per repository
 - `request_workers`: number of parallel workers used for per-PR detail fetches
+
+## Config shape
+
+The config defines:
+
+- `scoreboards`: named scoreboard sections and the repo list for each section
+- `window_days`: `null` for all-time data, or a numeric rolling window
+- weights, exclusions, and fetch controls
 
 ## Pages publication
 
@@ -61,6 +81,8 @@ Actions as the publishing source.
 - Review score currently counts review submissions (`APPROVED`,
   `CHANGES_REQUESTED`, `COMMENTED`) and inline review comments.
 - Delivery counts merged pull requests, not commit count.
+- The same raw repo metrics are reused across all configured scoreboard
+  sections, including the aggregate board.
 - Bot accounts are excluded automatically, in addition to any explicit login
   exclusions from config.
 - Large refactors can still dominate the code component even after exclusions.

@@ -68,7 +68,8 @@
       }
 
       .meta-grid,
-      .podium {
+      .podium,
+      .board-list {
         display: grid;
         gap: 16px;
         margin-bottom: 24px;
@@ -80,6 +81,27 @@
 
       .podium {
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .board-list {
+        gap: 36px;
+      }
+
+      .board-header {
+        display: grid;
+        gap: 6px;
+      }
+
+      .board-title {
+        margin: 0;
+        font-size: 1.65rem;
+      }
+
+      .board-subtitle,
+      .board-note,
+      .empty-state {
+        margin: 0;
+        color: var(--muted);
       }
 
       .card {
@@ -248,28 +270,7 @@
       </section>
 
       <section class="meta-grid" id="meta-grid"></section>
-      <section class="podium" id="podium"></section>
-
-      <section class="card table-card">
-        <div class="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Contributor</th>
-                <th class="numeric">Score</th>
-                <th class="numeric">Delivery</th>
-                <th class="numeric">Code</th>
-                <th class="numeric">Review</th>
-                <th class="numeric">Merged PRs</th>
-                <th class="numeric">Filtered churn</th>
-                <th class="numeric">Review points</th>
-              </tr>
-            </thead>
-            <tbody id="scoreboard-body"></tbody>
-          </table>
-        </div>
-      </section>
+      <section class="board-list" id="board-list"></section>
 
       <ul class="notes" id="notes"></ul>
       <p class="footer">
@@ -300,11 +301,15 @@
         return card;
       }
 
+      function formatWindow(payload) {
+        return payload.all_time ? "All time" : `${payload.window_days} days`;
+      }
+
       function renderMeta(payload) {
         const metaGrid = document.getElementById("meta-grid");
         metaGrid.replaceChildren(
-          createMetaCard("Repos", payload.repos.join(", ")),
-          createMetaCard("Window", `${payload.window_days} days`),
+          createMetaCard("Included Repos", payload.repos.join(", ")),
+          createMetaCard("Window", formatWindow(payload)),
           createMetaCard(
             "Generated",
             new Date(payload.generated_at).toLocaleString()
@@ -316,9 +321,9 @@
         );
       }
 
-      function renderPodium(contributors) {
-        const podium = document.getElementById("podium");
-        podium.replaceChildren();
+      function createPodium(contributors) {
+        const podium = document.createElement("section");
+        podium.className = "podium";
         contributors.slice(0, 3).forEach((entry) => {
           const article = document.createElement("article");
           article.className = "card";
@@ -343,11 +348,31 @@
           `;
           podium.appendChild(article);
         });
+        return podium;
       }
 
-      function renderTable(contributors) {
-        const body = document.getElementById("scoreboard-body");
-        body.replaceChildren();
+      function createTableCard(contributors) {
+        const card = document.createElement("section");
+        card.className = "card table-card";
+        const scroll = document.createElement("div");
+        scroll.className = "table-scroll";
+        const table = document.createElement("table");
+        table.innerHTML = `
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Contributor</th>
+              <th class="numeric">Score</th>
+              <th class="numeric">Delivery</th>
+              <th class="numeric">Code</th>
+              <th class="numeric">Review</th>
+              <th class="numeric">Merged PRs</th>
+              <th class="numeric">Filtered churn</th>
+              <th class="numeric">Review points</th>
+            </tr>
+          </thead>
+        `;
+        const body = document.createElement("tbody");
         contributors.forEach((entry) => {
           const row = document.createElement("tr");
           row.innerHTML = `
@@ -363,20 +388,71 @@
           `;
           body.appendChild(row);
         });
+        table.appendChild(body);
+        scroll.appendChild(table);
+        card.appendChild(scroll);
+        return card;
       }
 
-      function renderNotes(payload) {
+      function createBoardSection(board) {
+        const section = document.createElement("section");
+        section.className = "board-section";
+
+        const header = document.createElement("div");
+        header.className = "board-header";
+        header.innerHTML = `
+          <h2 class="board-title">${board.title}</h2>
+          <p class="board-subtitle">Repos: ${board.repos.join(", ")}</p>
+        `;
+        section.appendChild(header);
+
+        const meta = document.createElement("section");
+        meta.className = "meta-grid";
+        meta.replaceChildren(
+          createMetaCard("Contributors", formatInteger(board.contributors.length)),
+          createMetaCard(
+            "Merged PRs Evaluated",
+            formatInteger(board.pull_requests_evaluated)
+          ),
+          createMetaCard("Scope", board.repos.join(", "))
+        );
+        section.appendChild(meta);
+
+        if (board.contributors.length === 0) {
+          const empty = document.createElement("article");
+          empty.className = "card";
+          empty.innerHTML = `<p class="empty-state">No contributors matched this scoreboard scope.</p>`;
+          section.appendChild(empty);
+          return section;
+        }
+
+        section.appendChild(createPodium(board.contributors));
+        section.appendChild(createTableCard(board.contributors));
+
+        if (board.truncated_repos.length > 0) {
+          const note = document.createElement("p");
+          note.className = "board-note";
+          note.textContent = `Truncated by PR cap: ${board.truncated_repos.join(", ")}.`;
+          section.appendChild(note);
+        }
+
+        return section;
+      }
+
+      function renderBoards(payload) {
+        const boardList = document.getElementById("board-list");
+        boardList.replaceChildren(
+          ...payload.scoreboards.map((board) => createBoardSection(board))
+        );
+      }
+
+      function renderNotes() {
         const notes = document.getElementById("notes");
         const items = [
           "Delivery counts merged pull requests in the configured repo scope.",
           "Code uses additions + deletions after path exclusions.",
           "Review uses review submissions and inline review comments on other authors' pull requests.",
         ];
-        if (payload.truncated_repos.length > 0) {
-          items.push(
-            `Some repositories hit the configured PR cap: ${payload.truncated_repos.join(", ")}.`
-          );
-        }
         notes.replaceChildren(
           ...items.map((text) => {
             const item = document.createElement("li");
@@ -393,9 +469,8 @@
         }
         const payload = await response.json();
         renderMeta(payload);
-        renderPodium(payload.contributors);
-        renderTable(payload.contributors);
-        renderNotes(payload);
+        renderBoards(payload);
+        renderNotes();
       }
 
       main().catch((error) => {

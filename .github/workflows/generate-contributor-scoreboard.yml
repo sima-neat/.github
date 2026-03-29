@@ -1,0 +1,82 @@
+name: Generate Contributor Scoreboard
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "13 7 * * 1"
+  push:
+    branches:
+      - main
+    paths:
+      - "metrics/contributor-scoreboard/**"
+      - "scripts/generate-contributor-scoreboard.py"
+      - ".github/workflows/generate-contributor-scoreboard.yml"
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: org-policy
+    env:
+      ORG_NAME: sima-neat
+      ORG_API_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN != '' && secrets.ORG_ADMIN_TOKEN || secrets.GH_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secret
+        run: |
+          if [[ -z "${ORG_API_TOKEN}" ]]; then
+            echo "Missing secret. Set ORG_ADMIN_TOKEN or GH_TOKEN in environment org-policy."
+            echo "Token must be allowed to read pull request data across the configured repos."
+            exit 1
+          fi
+
+      - name: Generate contributor scoreboard
+        run: |
+          mkdir -p _work/contributor-scoreboard
+          python3 ./scripts/generate-contributor-scoreboard.py \
+            --config ./metrics/contributor-scoreboard/config.json \
+            --json-out ./_work/contributor-scoreboard/scoreboard.json \
+            --markdown-out ./_work/contributor-scoreboard/scoreboard.md
+
+      - name: Publish workflow summary
+        run: cat ./_work/contributor-scoreboard/scoreboard.md >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload contributor scoreboard artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: contributor-scoreboard
+          path: _work/contributor-scoreboard/
+
+      - name: Prepare Pages site artifact
+        run: |
+          mkdir -p _site
+          cp ./metrics/contributor-scoreboard/site/index.html ./_site/index.html
+          cp ./_work/contributor-scoreboard/scoreboard.json ./_site/scoreboard.json
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages site
+        id: deployment
+        uses: actions/deploy-pages@v4

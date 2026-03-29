@@ -35,6 +35,11 @@ We welcome contributions from the community in the form of **bug reports, featur
   - Complete the PR template checklist  
   - Be responsive to feedback during review  
 
+### 2.1 Merge Strategy
+- For feature or hotfix PRs targeting `develop`, prefer **Squash and merge** or **Rebase and merge** to keep the branch history concise.
+- For release-promotion PRs that merge `develop` into `main`, use a **merge commit** so the release ancestry stays intact.
+- Do not rely on a single repository-wide merge setting for both flows; choose the merge method that matches the target branch.
+
 ### 3. Documentation Contributions
 - All documentation is written in **Markdown** or **reStructuredText (RST)** depending on repo.  
 - Ensure code snippets are copy-paste ready.  

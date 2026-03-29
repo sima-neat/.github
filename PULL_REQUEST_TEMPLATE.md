@@ -32,6 +32,7 @@ Describe how you tested your changes:
 - [ ] Comments/documentation updated where needed  
 - [ ] New dependencies documented in README or `requirements.txt`  
 - [ ] Related issues linked in PR description  
+- [ ] Planned merge method matches the target branch policy in `CONTRIBUTING.md`
 - [ ] I have read and agree to the [Code of Conduct](./CODE_OF_CONDUCT.md)  
 
 ---

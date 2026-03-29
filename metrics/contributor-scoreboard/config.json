@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "window_days": 90,
+  "repos": ["apps"],
+  "weights": {
+    "delivery": 0.5,
+    "code": 0.3,
+    "review": 0.2
+  },
+  "review_weights": {
+    "APPROVED": 3.0,
+    "CHANGES_REQUESTED": 2.0,
+    "COMMENTED": 1.0,
+    "inline_comment": 0.5
+  },
+  "exclude_logins": [
+    "github-actions[bot]",
+    "dependabot[bot]"
+  ],
+  "code_exclude_patterns": [
+    "vendor/**",
+    "**/vendor/**",
+    "third_party/**",
+    "**/third_party/**",
+    "node_modules/**",
+    "**/node_modules/**",
+    "dist/**",
+    "**/dist/**",
+    "build/**",
+    "**/build/**",
+    "generated/**",
+    "**/generated/**",
+    "package-lock.json",
+    "**/package-lock.json",
+    "pnpm-lock.yaml",
+    "**/pnpm-lock.yaml",
+    "yarn.lock",
+    "**/yarn.lock",
+    "Cargo.lock",
+    "**/Cargo.lock",
+    "poetry.lock",
+    "**/poetry.lock",
+    "Pipfile.lock",
+    "**/Pipfile.lock",
+    "*.lock",
+    "**/*.lock"
+  ],
+  "max_pull_requests_per_repo": 200,
+  "request_workers": 8
+}

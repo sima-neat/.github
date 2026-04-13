@@ -44,6 +44,21 @@ on:
         required: false
         default: ""
         type: string
+      upload_strategy:
+        description: "Upload layout strategy: flat or branch-sha"
+        required: false
+        default: flat
+        type: string
+      artifact_subdir:
+        description: Optional subdirectory under the computed upload destination
+        required: false
+        default: ""
+        type: string
+      publish_index:
+        description: Generate latest.tag, commit metadata json, and branches.json
+        required: false
+        default: true
+        type: boolean
     secrets:
       aws_access_key_id:
         required: true
@@ -111,6 +126,10 @@ jobs:
       - name: Upload artifacts to S3-compatible storage
         run: |
           set -euo pipefail
+          BRANCH_RAW="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          BRANCH_KEY="$(echo "${BRANCH_RAW}" | tr '/ ' '--')"
+          SHORT_SHA="$(printf '%s' "${GITHUB_SHA}" | cut -c1-7)"
+
           endpoint_args=()
           resolved_endpoint="${R2_ENDPOINT_URL}"
           if [[ -z "${resolved_endpoint}" && -n "${R2_ACCOUNT_ID:-}" ]]; then
@@ -120,19 +139,39 @@ jobs:
             endpoint_args=(--endpoint-url "${resolved_endpoint}")
           fi
 
+          upload_prefix="${{ inputs.artifact_root }}"
+          case "${INPUT_UPLOAD_STRATEGY}" in
+            flat)
+              ;;
+            branch-sha)
+              upload_prefix="${upload_prefix}/${BRANCH_KEY}/${SHORT_SHA}"
+              ;;
+            *)
+              echo "Invalid upload_strategy: ${INPUT_UPLOAD_STRATEGY}. Expected flat or branch-sha." >&2
+              exit 1
+              ;;
+          esac
+          if [[ -n "${INPUT_ARTIFACT_SUBDIR}" ]]; then
+            subdir="${INPUT_ARTIFACT_SUBDIR#/}"
+            upload_prefix="${upload_prefix}/${subdir}"
+          fi
+
           while IFS= read -r artifact; do
             [[ -z "${artifact}" ]] && continue
             base="$(basename "${artifact}")"
             aws s3 cp "${endpoint_args[@]}" \
               "${artifact}" \
-              "s3://${{ inputs.bucket }}/${{ inputs.artifact_root }}/${base}"
+              "s3://${{ inputs.bucket }}/${upload_prefix}/${base}"
           done < <(
             python3 -c 'import glob, os; p=os.environ["INPUT_ARTIFACT_GLOB"]; [print(x) for x in sorted(glob.glob(p)) if os.path.isfile(x)]'
           )
         env:
           INPUT_ARTIFACT_GLOB: ${{ inputs.artifact_glob }}
+          INPUT_UPLOAD_STRATEGY: ${{ inputs.upload_strategy }}
+          INPUT_ARTIFACT_SUBDIR: ${{ inputs.artifact_subdir }}
 
       - name: Generate and upload build metadata + latest.tag
+        if: ${{ inputs.publish_index }}
         run: |
           set -euo pipefail
           BRANCH_RAW="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
@@ -210,6 +249,7 @@ jobs:
           INPUT_PROJECT_NAME: ${{ inputs.project_name }}
 
       - name: Refresh branches.json (branches + tags)
+        if: ${{ inputs.publish_index }}
         run: |
           set -euo pipefail
           mkdir -p _work/index

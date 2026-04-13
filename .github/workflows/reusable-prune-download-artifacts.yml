@@ -35,6 +35,11 @@ on:
         required: false
         default: ""
         type: string
+      install_awscli:
+        description: Install awscli with pip (disable when runner already has aws)
+        required: false
+        default: true
+        type: boolean
     secrets:
       aws_access_key_id:
         required: true
@@ -72,9 +77,15 @@ jobs:
           done
 
       - name: Install aws cli tooling
+        if: ${{ inputs.install_awscli }}
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install awscli
+
+      - name: Verify aws cli is available
+        if: ${{ !inputs.install_awscli }}
+        run: |
+          aws --version
 
       - name: Prune non-latest artifacts older than keep window
         run: |

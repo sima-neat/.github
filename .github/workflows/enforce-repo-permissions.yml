@@ -24,7 +24,7 @@ jobs:
       ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN != '' && secrets.ORG_ADMIN_TOKEN || secrets.GH_TOKEN }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Validate required secret
         run: |

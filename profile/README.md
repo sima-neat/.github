@@ -30,7 +30,8 @@ SiMa-NEAT gives you a higher-level **pipeline-as-code** workflow so teams can:
 
 ## Documentation
 
-Official docs: **https://neat.modalix.info**
+Official docs: **https://docs.sima-neat.com**
+Sample Apps: **https://apps.sima-neat.com/portal**
 
 ## Organization Focus
 

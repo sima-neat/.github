@@ -91,6 +91,10 @@
       "inherit_defaults": true,
       "teams": [
         {
+          "slug": "argo",
+          "permission": "maintain"
+        },
+        {
           "slug": "alpha",
           "permission": "pull"
         }

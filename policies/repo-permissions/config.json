@@ -86,6 +86,16 @@
           "permission": "admin"
         }
       ]
+    },
+    "model-sdk": {
+      "inherit_defaults": true,
+      "teams": [
+        {
+          "slug": "alpha",
+          "permission": "pull"
+        }
+      ],
+      "users": []
     }
   },
   "prune_unmanaged": {

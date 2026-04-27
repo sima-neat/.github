@@ -1,4 +1,4 @@
 {
-  "branch_priority": ["develop", "main"],
+  "branch_priority": ["main", "develop"],
   "exclude_repos": []
 }

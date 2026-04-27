@@ -6,8 +6,8 @@ This policy enforces repository default branch selection across the organization
 
 For each active repository:
 
-1. If `develop` exists, set default branch to `develop`.
-2. Otherwise, if `main` exists, set default branch to `main`.
+1. If `main` exists, set default branch to `main`.
+2. Otherwise, if `develop` exists, set default branch to `develop`.
 3. If neither branch exists, skip the repository.
 
 ## Config

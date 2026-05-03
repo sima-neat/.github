@@ -270,7 +270,15 @@ jobs:
                       if modified < cutoff:
                           wheel_delete.add(wheel_key)
 
-              delete_keys = sorted(meta_delete | wheel_delete)
+              prefix_delete = set()
+              for meta_key in meta_delete:
+                  info = metadata[meta_key]
+                  artifact_prefix = f"{root}/{info['branch_key']}/{info['sha']}/"
+                  for key in key_to_last_modified:
+                      if key.startswith(artifact_prefix):
+                          prefix_delete.add(key)
+
+              delete_keys = sorted(meta_delete | wheel_delete | prefix_delete)
 
               print(f"dry_run={dry_run}")
               print(f"keep_hours={keep_hours}")

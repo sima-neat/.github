@@ -15,12 +15,108 @@ fi
 unset ORG_ADMIN_TOKEN
 trap 'unset API_TOKEN registration_token remove_token' EXIT
 
-for cmd in curl jq tar uname hostname; do
+require_cmd() {
+  local cmd="$1"
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "Missing required command: $cmd"
     exit 1
   fi
-done
+}
+
+run_as_root() {
+  if [[ "${EUID}" -eq 0 ]]; then
+    "$@"
+  else
+    sudo "$@"
+  fi
+}
+
+install_packages() {
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    run_as_root apt-get update
+    run_as_root apt-get install -y --no-install-recommends "$@"
+    return 0
+  fi
+
+  if command -v dnf >/dev/null 2>&1; then
+    run_as_root dnf install -y "$@"
+    return 0
+  fi
+
+  if command -v yum >/dev/null 2>&1; then
+    run_as_root yum install -y "$@"
+    return 0
+  fi
+
+  if command -v apk >/dev/null 2>&1; then
+    run_as_root apk add --no-cache "$@"
+    return 0
+  fi
+
+  return 1
+}
+
+ensure_jq() {
+  if command -v jq >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "Installing jq..."
+  if ! install_packages jq; then
+    echo "Could not install jq automatically. Install jq and re-run this script."
+    exit 1
+  fi
+}
+
+ensure_unzip() {
+  if command -v unzip >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "Installing unzip..."
+  if ! install_packages unzip; then
+    echo "Could not install unzip automatically. Install unzip and re-run this script."
+    exit 1
+  fi
+}
+
+ensure_aws_cli() {
+  local platform="$1"
+  local arch="$2"
+  local aws_arch
+  local aws_zip
+  local tmp_dir
+
+  if command -v aws >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ "$platform" != "linux" ]]; then
+    echo "AWS CLI is missing. Automatic AWS CLI install is only implemented for Linux."
+    echo "Install AWS CLI v2 for this platform and re-run this script."
+    exit 1
+  fi
+
+  case "$arch" in
+    x64) aws_arch="x86_64" ;;
+    arm64) aws_arch="aarch64" ;;
+    *)
+      echo "Unsupported AWS CLI architecture: $arch"
+      exit 1
+      ;;
+  esac
+
+  ensure_unzip
+  tmp_dir="$(mktemp -d)"
+  aws_zip="$tmp_dir/awscliv2.zip"
+
+  echo "Installing AWS CLI v2 for linux-${aws_arch}..."
+  curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${aws_arch}.zip" -o "$aws_zip"
+  unzip -q "$aws_zip" -d "$tmp_dir"
+  run_as_root "$tmp_dir/aws/install" --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update
+  rm -rf "$tmp_dir"
+}
 
 prompt_default() {
   local prompt="$1"
@@ -120,8 +216,124 @@ detect_runner_group() {
   echo "Default"
 }
 
+has_systemd() {
+  local state
+
+  if [[ "$platform" != "linux" ]] ||
+    [[ ! -d /run/systemd/system ]] ||
+    ! command -v systemctl >/dev/null 2>&1; then
+    return 1
+  fi
+
+  state="$(systemctl is-system-running 2>/dev/null || true)"
+  [[ "$state" == "running" || "$state" == "degraded" ]]
+}
+
+has_supervisor() {
+  command -v supervisorctl >/dev/null 2>&1 &&
+    supervisorctl status >/dev/null 2>&1
+}
+
+safe_service_name() {
+  local name="$1"
+  printf '%s' "$name" | tr -cs '[:alnum:]_.-' '-' | sed -E 's/^-+//; s/-+$//'
+}
+
+resolve_start_mode() {
+  local requested="$1"
+
+  if [[ "$requested" != "auto" ]]; then
+    echo "$requested"
+    return 0
+  fi
+
+  if has_systemd; then
+    echo "systemd"
+    return 0
+  fi
+
+  if has_supervisor; then
+    echo "supervisor"
+    return 0
+  fi
+
+  echo "nohup"
+}
+
+stop_existing_runner_processes() {
+  local service_name="$1"
+  local old_pid
+
+  if [[ -x "./svc.sh" ]] && has_systemd; then
+    sudo ./svc.sh stop || true
+    sudo ./svc.sh uninstall || true
+  fi
+
+  if has_supervisor; then
+    supervisorctl stop "$service_name" >/dev/null 2>&1 || true
+    supervisorctl remove "$service_name" >/dev/null 2>&1 || true
+  fi
+
+  if [[ -f "runner.pid" ]]; then
+    old_pid="$(cat runner.pid 2>/dev/null || true)"
+    if [[ "$old_pid" =~ ^[0-9]+$ ]] && kill -0 "$old_pid" >/dev/null 2>&1; then
+      kill "$old_pid" || true
+    fi
+    rm -f runner.pid
+  fi
+}
+
+start_with_supervisor() {
+  local service_name="$1"
+  local conf_dir="/etc/supervisor/conf.d"
+  local conf_path="${conf_dir}/${service_name}.conf"
+  local local_conf="./${service_name}.supervisor.conf"
+
+  if ! has_supervisor; then
+    echo "supervisord is not running or supervisorctl is not available."
+    exit 1
+  fi
+
+  cat >"$local_conf" <<EOF
+[program:${service_name}]
+command=${PWD}/run.sh
+directory=${PWD}
+autostart=true
+autorestart=true
+startsecs=3
+startretries=3
+stopsignal=TERM
+stopasgroup=true
+killasgroup=true
+stdout_logfile=/var/log/supervisor/${service_name}.log
+stdout_logfile_maxbytes=10MB
+stdout_logfile_backups=3
+stderr_logfile=/var/log/supervisor/${service_name}.err.log
+stderr_logfile_maxbytes=10MB
+stderr_logfile_backups=3
+EOF
+
+  run_as_root mkdir -p "$conf_dir" /var/log/supervisor
+  run_as_root cp "$local_conf" "$conf_path"
+  supervisorctl reread
+  supervisorctl update
+  supervisorctl restart "$service_name"
+  echo "Runner started with supervisord as ${service_name}."
+}
+
+start_with_nohup() {
+  echo "Starting runner with nohup..."
+  nohup ./run.sh >runner.log 2>&1 &
+  echo "$!" >runner.pid
+  echo "Runner started with PID $(cat runner.pid). Logs: ${PWD}/runner.log"
+}
+
 echo "GitHub Actions Runner Setup"
 echo
+
+for cmd in curl tar uname hostname; do
+  require_cmd "$cmd"
+done
 
 scope="$(prompt_default "Runner scope: org or repo" "org")"
 scope="$(echo "$scope" | tr '[:upper:]' '[:lower:]')"
@@ -160,8 +372,12 @@ if [[ "$arch" != "x64" && "$arch" != "arm64" ]]; then
 fi
 echo "Detected runner target: ${platform}-${arch}"
 
+ensure_jq
+ensure_aws_cli "$platform" "$arch"
+
 runner_name_default="$(hostname)-${platform}-${arch}-$(random_suffix)"
 runner_name="$(prompt_default "Runner name" "$runner_name_default")"
+runner_service_name="github-actions-runner-$(safe_service_name "$runner_name")"
 labels_default="self-hosted,${platform},${arch}"
 labels="$(prompt_default "Runner labels (comma-separated)" "$labels_default")"
 work_folder="$(prompt_default "Runner work folder" "_work")"
@@ -171,8 +387,16 @@ replace_existing="$(prompt_yes_no "Replace existing runner with same name" "y")"
 install_root_default="$PWD/actions-runner-${org_name}-${runner_name}"
 install_root="$(prompt_default "Install directory" "$install_root_default")"
 
-as_service="$(prompt_yes_no "Install and start as service (requires sudo)" "y")"
-run_after_setup="$(prompt_yes_no "Run runner immediately after setup" "y")"
+start_mode="$(prompt_default "Start mode: auto, systemd, supervisor, nohup, foreground, none" "auto")"
+start_mode="$(echo "$start_mode" | tr '[:upper:]' '[:lower:]')"
+case "$start_mode" in
+  auto|systemd|supervisor|nohup|foreground|none) ;;
+  *)
+    echo "Invalid start mode: $start_mode"
+    echo "Use auto, systemd, supervisor, nohup, foreground, or none."
+    exit 1
+    ;;
+esac
 
 if [[ -d "$install_root" ]] && [[ -n "$(ls -A "$install_root" 2>/dev/null || true)" ]]; then
   if [[ -f "$install_root/.runner" && -x "$install_root/config.sh" ]]; then
@@ -200,10 +424,7 @@ cd "$install_root"
 
 if [[ -f ".runner" && -x "./config.sh" ]]; then
   echo "De-registering existing runner..."
-  if [[ -x "./svc.sh" ]]; then
-    sudo ./svc.sh stop || true
-    sudo ./svc.sh uninstall || true
-  fi
+  stop_existing_runner_processes "$runner_service_name"
   remove_token="$(fetch_runner_token "$remove_endpoint")"
   ./config.sh remove --token "$remove_token"
 fi
@@ -257,14 +478,35 @@ fi
 echo "Configuring runner for ${url}..."
 ./config.sh "${config_args[@]}"
 
-if [[ "$as_service" == "y" ]]; then
-  echo "Installing service..."
-  sudo ./svc.sh install
-  sudo ./svc.sh start
-  echo "Runner service started."
-elif [[ "$run_after_setup" == "y" ]]; then
-  echo "Starting runner in foreground..."
-  ./run.sh
-else
-  echo "Setup complete. Start later with: cd \"$install_root\" && ./run.sh"
-fi
+resolved_start_mode="$(resolve_start_mode "$start_mode")"
+echo "Resolved start mode: ${resolved_start_mode}"
+
+case "$resolved_start_mode" in
+  systemd)
+    if ! has_systemd; then
+      echo "systemd was requested, but systemd is not running on this host."
+      exit 1
+    fi
+    echo "Installing systemd service..."
+    sudo ./svc.sh install
+    sudo ./svc.sh start
+    echo "Runner systemd service started."
+    ;;
+  supervisor)
+    start_with_supervisor "$runner_service_name"
+    ;;
+  nohup)
+    start_with_nohup
+    ;;
+  foreground)
+    echo "Starting runner in foreground..."
+    ./run.sh
+    ;;
+  none)
+    echo "Setup complete. Start later with: cd \"$install_root\" && ./run.sh"
+    ;;
+  *)
+    echo "Unsupported resolved start mode: ${resolved_start_mode}"
+    exit 1
+    ;;
+esac

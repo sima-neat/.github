@@ -1,0 +1,289 @@
+name: Vulcan Publish Artifacts
+
+on:
+  workflow_call:
+    inputs:
+      bucket:
+        description: Vulcan artifact S3 bucket name.
+        required: true
+        type: string
+      role_to_assume:
+        description: AWS IAM role ARN to assume with GitHub OIDC.
+        required: true
+        type: string
+      aws_region:
+        description: AWS region for S3 and STS.
+        required: false
+        default: us-west-2
+        type: string
+      environment_name:
+        description: GitHub environment name.
+        required: false
+        default: dev
+        type: string
+      artifact_folder:
+        description: Folder under repo/branch where artifacts are stored.
+        required: false
+        default: artifacts
+        type: string
+      artifact_pattern:
+        description: actions/download-artifact pattern.
+        required: true
+        type: string
+      artifact_glob:
+        description: File glob to publish after artifact download.
+        required: false
+        default: "**/*"
+        type: string
+      min_artifact_count:
+        description: Minimum expected matching file count.
+        required: false
+        default: 1
+        type: number
+      download_path:
+        description: Local path where GitHub artifacts are downloaded.
+        required: false
+        default: _vulcan/downloaded-artifacts
+        type: string
+      merge_multiple:
+        description: Merge matching GitHub artifacts into one directory.
+        required: false
+        default: true
+        type: boolean
+      publish_manifest:
+        description: Generate and upload manifest.json for the published files.
+        required: false
+        default: true
+        type: boolean
+      install_awscli:
+        description: Install AWS CLI v2 before publishing.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish Vulcan artifacts
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment_name }}
+    env:
+      AWS_REGION: ${{ inputs.aws_region }}
+      ARTIFACT_BUCKET: ${{ inputs.bucket }}
+      ARTIFACT_FOLDER_INPUT: ${{ inputs.artifact_folder }}
+      ARTIFACT_GLOB: ${{ inputs.artifact_glob }}
+      DOWNLOAD_PATH: ${{ inputs.download_path }}
+      MIN_ARTIFACT_COUNT: ${{ inputs.min_artifact_count }}
+      PUBLISH_MANIFEST: ${{ inputs.publish_manifest }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-region: ${{ inputs.aws_region }}
+          role-to-assume: ${{ inputs.role_to_assume }}
+          role-session-name: vulcan-publish-${{ github.run_id }}
+
+      - name: Install aws cli tooling
+        if: ${{ inputs.install_awscli }}
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) aws_arch="x86_64" ;;
+            aarch64|arm64) aws_arch="aarch64" ;;
+            *) echo "Unsupported architecture for AWS CLI v2: $(uname -m)" >&2; exit 1 ;;
+          esac
+
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+          curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${aws_arch}.zip" -o "$tmpdir/awscliv2.zip"
+          python3 -m zipfile -e "$tmpdir/awscliv2.zip" "$tmpdir"
+
+          install_dir="${HOME}/.local/aws-cli"
+          bin_dir="${HOME}/.local/bin"
+          mkdir -p "$bin_dir"
+
+          install_args=(-i "$install_dir" -b "$bin_dir")
+          if [[ -x "$bin_dir/aws" ]]; then
+            install_args+=(--update)
+          fi
+          "$tmpdir/aws/install" "${install_args[@]}"
+
+          echo "$bin_dir" >> "$GITHUB_PATH"
+          "$bin_dir/aws" --version
+
+      - name: Verify aws cli is available
+        if: ${{ !inputs.install_awscli }}
+        run: |
+          set -euo pipefail
+          aws --version
+
+      - name: Download GitHub artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: ${{ inputs.artifact_pattern }}
+          path: ${{ inputs.download_path }}
+          merge-multiple: ${{ inputs.merge_multiple }}
+
+      - name: Publish artifacts and branch index
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import subprocess
+          import urllib.request
+          from urllib.parse import quote
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def clean_path_part(raw: str, fallback: str) -> str:
+              value = raw.strip() or fallback
+              value = value.replace("/", "-")
+              value = re.sub(r"[^A-Za-z0-9._-]+", "-", value)
+              value = re.sub(r"-+", "-", value).strip(".-")
+              if not value:
+                  raise SystemExit(f"Invalid path component: {raw!r}")
+              return value
+
+          def branch_key(raw: str) -> str:
+              value = raw.strip()
+              if not value:
+                  raise SystemExit("Branch name is empty.")
+              return quote(value, safe="")
+
+          def run(*args: str) -> None:
+              print("+", " ".join(args), flush=True)
+              subprocess.run(args, check=True)
+
+          def sha256_file(path: Path) -> str:
+              h = hashlib.sha256()
+              with path.open("rb") as f:
+                  for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          def fetch_branches(repo: str, token: str) -> dict:
+              headers = {
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              }
+              branches = []
+              page = 1
+              while True:
+                  url = f"https://api.github.com/repos/{repo}/branches?per_page=100&page={page}"
+                  req = urllib.request.Request(url, headers=headers)
+                  with urllib.request.urlopen(req) as resp:
+                      batch = json.loads(resp.read().decode("utf-8"))
+                  if not batch:
+                      break
+                  for item in batch:
+                      name = str(item["name"])
+                      branches.append({
+                          "name": name,
+                          "key": branch_key(name),
+                          "protected": bool(item.get("protected", False)),
+                          "commit": str(item.get("commit", {}).get("sha", "")),
+                      })
+                  if len(batch) < 100:
+                      break
+                  page += 1
+
+              default_branch = ""
+              req = urllib.request.Request(f"https://api.github.com/repos/{repo}", headers=headers)
+              with urllib.request.urlopen(req) as resp:
+                  repo_doc = json.loads(resp.read().decode("utf-8"))
+                  default_branch = str(repo_doc.get("default_branch", ""))
+
+              return {
+                  "repository": repo,
+                  "default_branch": default_branch,
+                  "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+                  "branches": sorted(branches, key=lambda b: b["name"].lower()),
+              }
+
+          github_repo = os.environ["GITHUB_REPOSITORY"]
+          owner, repo_name_from_context = github_repo.split("/", 1)
+          del owner
+          repo_name = clean_path_part(repo_name_from_context, "repository")
+          branch_raw = (
+              os.environ.get("GITHUB_HEAD_REF")
+              or os.environ["GITHUB_REF_NAME"]
+          )
+          encoded_branch_key = branch_key(branch_raw)
+          artifact_folder = clean_path_part(os.environ["ARTIFACT_FOLDER_INPUT"], "artifacts")
+
+          download_path = Path(os.environ["DOWNLOAD_PATH"])
+          if not download_path.exists():
+              raise SystemExit(f"Download path does not exist: {download_path}")
+
+          files = [
+              p for p in sorted(download_path.glob(os.environ["ARTIFACT_GLOB"]))
+              if p.is_file()
+          ]
+          min_count = int(os.environ["MIN_ARTIFACT_COUNT"])
+          if len(files) < min_count:
+              raise SystemExit(f"Expected at least {min_count} artifact(s), found {len(files)}")
+
+          bucket = os.environ["ARTIFACT_BUCKET"]
+          prefix = f"{repo_name}/{encoded_branch_key}/{artifact_folder}"
+          now = datetime.now(timezone.utc).isoformat()
+          manifest_entries = []
+
+          for path in files:
+              rel = path.relative_to(download_path)
+              rel_key = "/".join(rel.parts)
+              target = f"s3://{bucket}/{prefix}/{rel_key}"
+              run("aws", "s3", "cp", str(path), target)
+              manifest_entries.append({
+                  "path": rel_key,
+                  "s3_key": f"{prefix}/{rel_key}",
+                  "size": path.stat().st_size,
+                  "sha256": sha256_file(path),
+              })
+
+          index_dir = Path("_vulcan/index")
+          index_dir.mkdir(parents=True, exist_ok=True)
+
+          if os.environ["PUBLISH_MANIFEST"].lower() == "true":
+              manifest = {
+                  "repository": github_repo,
+                  "repository_key": repo_name,
+                  "branch": branch_raw,
+                  "branch_key": encoded_branch_key,
+                  "artifact_folder": artifact_folder,
+                  "commit": os.environ["GITHUB_SHA"],
+                  "run_id": os.environ["GITHUB_RUN_ID"],
+                  "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+                  "published_at_utc": now,
+                  "artifacts": manifest_entries,
+              }
+              manifest_path = index_dir / "manifest.json"
+              manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+              run(
+                  "aws", "s3", "cp", str(manifest_path),
+                  f"s3://{bucket}/{prefix}/manifest.json",
+                  "--content-type", "application/json",
+              )
+
+          branches = fetch_branches(github_repo, os.environ["GH_TOKEN"])
+          branches_path = index_dir / "branches.json"
+          branches_path.write_text(json.dumps(branches, indent=2) + "\n", encoding="utf-8")
+          run(
+              "aws", "s3", "cp", str(branches_path),
+              f"s3://{bucket}/{repo_name}/branches.json",
+              "--content-type", "application/json",
+          )
+
+          print(f"published_count={len(files)}")
+          print(f"published_prefix=s3://{bucket}/{prefix}/")
+          print(f"branches_index=s3://{bucket}/{repo_name}/branches.json")
+          PY

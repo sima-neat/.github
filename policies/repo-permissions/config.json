@@ -110,6 +110,26 @@
         }
       ],
       "users": []
+    },
+    "vulcan": {
+      "inherit_defaults": true,
+      "teams": [
+        {
+          "slug": "argo",
+          "permission": "pull"
+        }
+      ],
+      "users": []
+    },
+    "sima-cli": {
+      "inherit_defaults": true,
+      "teams": [
+        {
+          "slug": "argo",
+          "permission": "pull"
+        }
+      ],
+      "users": []
     }
   },
   "prune_unmanaged": {

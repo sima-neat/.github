@@ -116,7 +116,7 @@
       "teams": [
         {
           "slug": "argo",
-          "permission": "pull"
+          "permission": "maintain"
         }
       ],
       "users": []
@@ -126,7 +126,7 @@
       "teams": [
         {
           "slug": "argo",
-          "permission": "pull"
+          "permission": "maintain"
         }
       ],
       "users": []

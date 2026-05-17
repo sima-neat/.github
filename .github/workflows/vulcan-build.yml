@@ -1,0 +1,139 @@
+name: vulcan-build
+
+on:
+  workflow_call:
+    inputs:
+      vulcan_env:
+        description: Vulcan environment label override. Empty uses the caller repo or org VULCAN_ENV variable, then dev.
+        required: false
+        default: ""
+        type: string
+      sdk_cache:
+        description: Vulcan SDK cache label, such as sdk-latest or sdk-2.1.
+        required: false
+        default: sdk-latest
+        type: string
+      capacity:
+        description: Vulcan capacity label, such as cheaper, cheap, default, expensive, or most-expensive.
+        required: false
+        default: default
+        type: string
+      working_directory:
+        description: Directory under the checked-out repository where the build command runs.
+        required: false
+        default: "."
+        type: string
+      build_command:
+        description: Build command to run inside the checked-out repository.
+        required: false
+        default: "./build.sh --all --clean"
+        type: string
+      pre_build_command:
+        description: Optional shell command to run before build_command.
+        required: false
+        default: ""
+        type: string
+      post_build_command:
+        description: Optional shell command to run after build_command.
+        required: false
+        default: ""
+        type: string
+      ensure_sdk_container:
+        description: Run sima-cli sdk setup before the build.
+        required: false
+        default: true
+        type: boolean
+      sdk_setup_args:
+        description: Arguments for sima-cli sdk setup when ensure_sdk_container is true.
+        required: false
+        default: "-y -n --no-model-sdk --no-insight"
+        type: string
+      fetch_depth:
+        description: Git checkout fetch depth. Use 0 when versioning depends on tags/history.
+        required: false
+        default: 1
+        type: number
+      checkout_submodules:
+        description: Whether actions/checkout should fetch submodules.
+        required: false
+        default: recursive
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  VULCAN_ENV: ${{ inputs.vulcan_env || vars.VULCAN_ENV || 'dev' }}
+  SDK_CACHE: ${{ inputs.sdk_cache }}
+  VULCAN_CAPACITY: ${{ inputs.capacity }}
+
+jobs:
+  build:
+    name: SDK build on Vulcan
+    environment: ${{ inputs.vulcan_env || vars.VULCAN_ENV || 'dev' }}
+    runs-on: [self-hosted, linux, arm64, "vulcan-${{ inputs.vulcan_env || vars.VULCAN_ENV || 'dev' }}", sdk-build, "${{ inputs.sdk_cache }}", "${{ inputs.capacity }}"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: ${{ inputs.fetch_depth }}
+          submodules: ${{ inputs.checkout_submodules }}
+
+      - name: Inspect Vulcan runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "VULCAN_ENV=${VULCAN_ENV}"
+          echo "SDK_CACHE=${SDK_CACHE}"
+          echo "VULCAN_CAPACITY=${VULCAN_CAPACITY}"
+          uname -a
+          id
+          df -h
+          docker version
+          docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+          test -x /mnt/vulcan/bin/sima-cli
+          /mnt/vulcan/bin/sima-cli version
+
+      - name: Ensure SDK container
+        if: ${{ inputs.ensure_sdk_container }}
+        shell: bash
+        env:
+          SDK_SETUP_ARGS: ${{ inputs.sdk_setup_args }}
+        run: |
+          set -euo pipefail
+          cd /mnt/vulcan/workspace
+          read -r -a sdk_setup_argv <<< "${SDK_SETUP_ARGS}"
+          /mnt/vulcan/bin/sima-cli sdk setup "${sdk_setup_argv[@]}"
+          docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+
+      - name: Pre-build
+        if: ${{ inputs.pre_build_command != '' }}
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          PRE_BUILD_COMMAND: ${{ inputs.pre_build_command }}
+        run: |
+          set -euo pipefail
+          bash -lc "${PRE_BUILD_COMMAND}"
+
+      - name: Build
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          BUILD_COMMAND: ${{ inputs.build_command }}
+        run: |
+          set -euo pipefail
+          bash -lc "${BUILD_COMMAND}"
+
+      - name: Post-build
+        if: ${{ inputs.post_build_command != '' }}
+        shell: bash
+        working-directory: ${{ inputs.working_directory }}
+        env:
+          POST_BUILD_COMMAND: ${{ inputs.post_build_command }}
+        run: |
+          set -euo pipefail
+          bash -lc "${POST_BUILD_COMMAND}"

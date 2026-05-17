@@ -1,0 +1,42 @@
+name: example-vulcan-sdk-build-caller
+
+on:
+  workflow_dispatch:
+    inputs:
+      vulcan_env:
+        description: Optional Vulcan environment override.
+        required: false
+        default: ""
+        type: string
+      sdk_cache:
+        description: SDK cache label.
+        required: true
+        default: sdk-latest
+        type: string
+      capacity:
+        description: Vulcan capacity label.
+        required: true
+        default: default
+        type: choice
+        options:
+          - cheaper
+          - cheap
+          - default
+          - expensive
+          - most-expensive
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  sdk-build:
+    uses: sima-neat/.github/.github/workflows/vulcan-build.yml@main
+    with:
+      vulcan_env: ${{ inputs.vulcan_env }}
+      sdk_cache: ${{ inputs.sdk_cache }}
+      capacity: ${{ inputs.capacity }}
+      working_directory: "."
+      build_command: "./build.sh --all --clean"
+      ensure_sdk_container: true
+      sdk_setup_args: "-y -n --no-model-sdk --no-insight"

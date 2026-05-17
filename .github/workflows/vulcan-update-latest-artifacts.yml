@@ -1,0 +1,164 @@
+name: Vulcan Update Latest Artifacts
+
+on:
+  workflow_call:
+    inputs:
+      bucket:
+        description: Vulcan artifact S3 bucket name.
+        required: true
+        type: string
+      role_to_assume:
+        description: AWS IAM role ARN to assume with GitHub OIDC.
+        required: true
+        type: string
+      aws_region:
+        description: AWS region for S3 and STS.
+        required: false
+        default: us-west-2
+        type: string
+      environment_name:
+        description: GitHub environment name.
+        required: false
+        default: dev
+        type: string
+      artifact_folder:
+        description: Folder under repo/branch where latest-tag.txt is written.
+        required: false
+        default: artifacts
+        type: string
+      latest_tag:
+        description: Value to write to latest-tag.txt. Empty uses the current short commit SHA.
+        required: false
+        default: ""
+        type: string
+      validate_manifest:
+        description: Require manifest.json to exist under repo/branch/folder before updating latest-tag.txt.
+        required: false
+        default: true
+        type: boolean
+      install_awscli:
+        description: Install AWS CLI v2 before updating S3.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  update-latest:
+    name: Update Vulcan latest tag
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment_name }}
+    env:
+      AWS_REGION: ${{ inputs.aws_region }}
+      ARTIFACT_BUCKET: ${{ inputs.bucket }}
+      ARTIFACT_FOLDER_INPUT: ${{ inputs.artifact_folder }}
+      LATEST_TAG_INPUT: ${{ inputs.latest_tag }}
+      VALIDATE_MANIFEST: ${{ inputs.validate_manifest }}
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-region: ${{ inputs.aws_region }}
+          role-to-assume: ${{ inputs.role_to_assume }}
+          role-session-name: vulcan-latest-${{ github.run_id }}
+
+      - name: Install aws cli tooling
+        if: ${{ inputs.install_awscli }}
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) aws_arch="x86_64" ;;
+            aarch64|arm64) aws_arch="aarch64" ;;
+            *) echo "Unsupported architecture for AWS CLI v2: $(uname -m)" >&2; exit 1 ;;
+          esac
+
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+          curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${aws_arch}.zip" -o "$tmpdir/awscliv2.zip"
+          python3 -m zipfile -e "$tmpdir/awscliv2.zip" "$tmpdir"
+
+          install_dir="${HOME}/.local/aws-cli"
+          bin_dir="${HOME}/.local/bin"
+          mkdir -p "$bin_dir"
+
+          install_args=(-i "$install_dir" -b "$bin_dir")
+          if [[ -x "$bin_dir/aws" ]]; then
+            install_args+=(--update)
+          fi
+          "$tmpdir/aws/install" "${install_args[@]}"
+
+          echo "$bin_dir" >> "$GITHUB_PATH"
+          "$bin_dir/aws" --version
+
+      - name: Verify aws cli is available
+        if: ${{ !inputs.install_awscli }}
+        run: |
+          set -euo pipefail
+          aws --version
+
+      - name: Update latest-tag.txt
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+          from urllib.parse import quote
+
+          def clean_path_part(raw: str, fallback: str) -> str:
+              value = raw.strip() or fallback
+              value = value.replace("/", "-")
+              value = re.sub(r"[^A-Za-z0-9._-]+", "-", value)
+              value = re.sub(r"-+", "-", value).strip(".-")
+              if not value:
+                  raise SystemExit(f"Invalid path component: {raw!r}")
+              return value
+
+          def branch_key(raw: str) -> str:
+              value = raw.strip()
+              if not value:
+                  raise SystemExit("Branch name is empty.")
+              return quote(value, safe="")
+
+          def run(*args: str) -> None:
+              print("+", " ".join(args), flush=True)
+              subprocess.run(args, check=True)
+
+          github_repo = os.environ["GITHUB_REPOSITORY"]
+          _, repo_name_from_context = github_repo.split("/", 1)
+          repo_name = clean_path_part(repo_name_from_context, "repository")
+          branch_raw = (
+              os.environ.get("GITHUB_HEAD_REF")
+              or os.environ["GITHUB_REF_NAME"]
+          )
+          encoded_branch_key = branch_key(branch_raw)
+          artifact_folder = clean_path_part(os.environ["ARTIFACT_FOLDER_INPUT"], "artifacts")
+          latest_tag = os.environ["LATEST_TAG_INPUT"].strip() or os.environ["GITHUB_SHA"][:7]
+
+          out = Path("_vulcan/latest-tag.txt")
+          out.parent.mkdir(parents=True, exist_ok=True)
+          out.write_text(latest_tag + "\n", encoding="utf-8")
+
+          bucket = os.environ["ARTIFACT_BUCKET"]
+          prefix = f"{repo_name}/{encoded_branch_key}/{artifact_folder}"
+          if os.environ["VALIDATE_MANIFEST"].lower() == "true":
+              run(
+                  "aws", "s3api", "head-object",
+                  "--bucket", bucket,
+                  "--key", f"{prefix}/manifest.json",
+              )
+
+          key = f"{prefix}/latest-tag.txt"
+          run(
+              "aws", "s3", "cp", str(out), f"s3://{bucket}/{key}",
+              "--content-type", "text/plain",
+              "--cache-control", "no-store",
+          )
+          print(f"latest_tag={latest_tag}")
+          print(f"latest_tag_s3=s3://{bucket}/{key}")
+          PY

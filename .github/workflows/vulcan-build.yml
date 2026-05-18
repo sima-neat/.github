@@ -46,7 +46,7 @@ on:
       sdk_setup_args:
         description: Arguments for sima-cli sdk setup when ensure_sdk_container is true.
         required: false
-        default: "-y -n --no-model-sdk --no-insight"
+        default: "-y -n --minimal --workspace /mnt/vulcan/workspace --no-model-sdk --no-insight"
         type: string
       fetch_depth:
         description: Git checkout fetch depth. Use 0 when versioning depends on tags/history.
@@ -58,6 +58,21 @@ on:
         required: false
         default: recursive
         type: string
+      artifact_name:
+        description: Optional GitHub Actions artifact name to upload after build_command.
+        required: false
+        default: ""
+        type: string
+      artifact_path:
+        description: Optional path or glob to upload after build_command.
+        required: false
+        default: ""
+        type: string
+      artifact_retention_days:
+        description: Retention days for uploaded GitHub Actions artifacts.
+        required: false
+        default: 7
+        type: number
 
 permissions:
   contents: read
@@ -68,6 +83,7 @@ env:
   VULCAN_ENV: ${{ inputs.vulcan_env || vars.VULCAN_ENV || 'dev' }}
   SDK_CACHE: ${{ inputs.sdk_cache }}
   VULCAN_CAPACITY: ${{ inputs.capacity }}
+  VULCAN_WORKSPACE: /mnt/vulcan/workspace
 
 jobs:
   build:
@@ -76,11 +92,26 @@ jobs:
     runs-on: [self-hosted, linux, arm64, "vulcan-${{ inputs.vulcan_env || vars.VULCAN_ENV || 'dev' }}", sdk-build, "${{ inputs.sdk_cache }}", "${{ inputs.capacity }}"]
 
     steps:
+      - name: Prepare Vulcan workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 0775 "${VULCAN_WORKSPACE}"
+          find "${VULCAN_WORKSPACE}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: ${{ inputs.fetch_depth }}
           submodules: ${{ inputs.checkout_submodules }}
+
+      - name: Stage checkout into Vulcan workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          find "${VULCAN_WORKSPACE}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+          tar -C "${GITHUB_WORKSPACE}" --exclude .git -cf - . | tar -C "${VULCAN_WORKSPACE}" -xf -
+          test -f "${VULCAN_WORKSPACE}/README.md"
 
       - name: Inspect Vulcan runner
         shell: bash
@@ -104,7 +135,7 @@ jobs:
           SDK_SETUP_ARGS: ${{ inputs.sdk_setup_args }}
         run: |
           set -euo pipefail
-          cd /mnt/vulcan/workspace
+          cd "${VULCAN_WORKSPACE}"
           read -r -a sdk_setup_argv <<< "${SDK_SETUP_ARGS}"
           /mnt/vulcan/bin/sima-cli sdk setup "${sdk_setup_argv[@]}"
           docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
@@ -112,7 +143,7 @@ jobs:
       - name: Pre-build
         if: ${{ inputs.pre_build_command != '' }}
         shell: bash
-        working-directory: ${{ inputs.working_directory }}
+        working-directory: ${{ env.VULCAN_WORKSPACE }}/${{ inputs.working_directory }}
         env:
           PRE_BUILD_COMMAND: ${{ inputs.pre_build_command }}
         run: |
@@ -121,7 +152,7 @@ jobs:
 
       - name: Build
         shell: bash
-        working-directory: ${{ inputs.working_directory }}
+        working-directory: ${{ env.VULCAN_WORKSPACE }}/${{ inputs.working_directory }}
         env:
           BUILD_COMMAND: ${{ inputs.build_command }}
         run: |
@@ -131,9 +162,18 @@ jobs:
       - name: Post-build
         if: ${{ inputs.post_build_command != '' }}
         shell: bash
-        working-directory: ${{ inputs.working_directory }}
+        working-directory: ${{ env.VULCAN_WORKSPACE }}/${{ inputs.working_directory }}
         env:
           POST_BUILD_COMMAND: ${{ inputs.post_build_command }}
         run: |
           set -euo pipefail
           bash -lc "${POST_BUILD_COMMAND}"
+
+      - name: Upload build artifact
+        if: ${{ inputs.artifact_name != '' && inputs.artifact_path != '' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ env.VULCAN_WORKSPACE }}/${{ inputs.artifact_path }}
+          if-no-files-found: error
+          retention-days: ${{ inputs.artifact_retention_days }}

@@ -1,7 +1,7 @@
 # SiMa.ai Neat
 
 <p>
-  <img src="https://sima.ai/wp-content/themes/andanothertheme/assets/img/logo.svg" alt="SiMa.ai" width="180" />
+  <img src="./sima-ai-logo.svg" alt="SiMa.ai" width="180" />
 </p>
 
 **SiMa.ai Neat** is an application-development framework for building and running AI applications on the SiMa.ai platform. It provides Python and C++ APIs for working with compiled model artifacts, composing application logic, and running AI pipelines on Modalix and SiMa.ai SoCs.

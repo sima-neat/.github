@@ -179,7 +179,7 @@ on:
 
 permissions:
   contents: read
-  actions: read
+  actions: write
   id-token: write
 
 jobs:
@@ -209,6 +209,7 @@ Common inputs:
 | `merge_multiple` | `true` | Merge matching GitHub artifacts before publishing. |
 | `publish_manifest` | `true` | Upload `manifest.json` with file hashes and run metadata. |
 | `install_awscli` | `false` | Install AWS CLI v2 from Amazon's Linux installer. Leave false when the runner already has `aws`. |
+| `cleanup_github_artifacts` | `true` | Delete matching GitHub Actions artifacts after a successful S3 publish. |
 
 The AWS role trust policy must restrict GitHub OIDC subjects to the intended
 repositories, branches, and environments. The workflow is public, so AWS IAM is

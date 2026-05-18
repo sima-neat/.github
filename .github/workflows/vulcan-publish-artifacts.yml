@@ -5,11 +5,13 @@ on:
     inputs:
       bucket:
         description: Vulcan artifact S3 bucket name.
-        required: true
+        required: false
+        default: ""
         type: string
       role_to_assume:
         description: AWS IAM role ARN to assume with GitHub OIDC.
-        required: true
+        required: false
+        default: ""
         type: string
       aws_region:
         description: AWS region for S3 and STS.
@@ -61,12 +63,12 @@ on:
         default: false
         type: boolean
       sse_kms_key_id:
-        description: Optional KMS key ID, alias, or ARN for uploaded artifacts.
+        description: Optional KMS key ID, alias, or ARN for uploaded artifacts. Empty uses VULCAN_ARTIFACT_KMS_KEY_ID from the selected environment.
         required: false
         default: ""
         type: string
       cloudfront_distribution_id:
-        description: Optional CloudFront distribution ID to invalidate after publishing.
+        description: Optional CloudFront distribution ID to invalidate after publishing. Empty uses VULCAN_ARTIFACT_CLOUDFRONT_DISTRIBUTION_ID from the selected environment.
         required: false
         default: ""
         type: string
@@ -83,14 +85,14 @@ jobs:
     environment: ${{ inputs.environment_name }}
     env:
       AWS_REGION: ${{ inputs.aws_region }}
-      ARTIFACT_BUCKET: ${{ inputs.bucket }}
+      ARTIFACT_BUCKET: ${{ inputs.bucket || vars.VULCAN_ARTIFACT_BUCKET }}
       ARTIFACT_FOLDER_INPUT: ${{ inputs.artifact_folder }}
       ARTIFACT_GLOB: ${{ inputs.artifact_glob }}
       DOWNLOAD_PATH: ${{ inputs.download_path }}
       MIN_ARTIFACT_COUNT: ${{ inputs.min_artifact_count }}
       PUBLISH_MANIFEST: ${{ inputs.publish_manifest }}
-      SSE_KMS_KEY_ID: ${{ inputs.sse_kms_key_id }}
-      CLOUDFRONT_DISTRIBUTION_ID: ${{ inputs.cloudfront_distribution_id }}
+      SSE_KMS_KEY_ID: ${{ inputs.sse_kms_key_id || vars.VULCAN_ARTIFACT_KMS_KEY_ID }}
+      CLOUDFRONT_DISTRIBUTION_ID: ${{ inputs.cloudfront_distribution_id || vars.VULCAN_ARTIFACT_CLOUDFRONT_DISTRIBUTION_ID }}
       GH_TOKEN: ${{ github.token }}
 
     steps:
@@ -98,7 +100,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v5
         with:
           aws-region: ${{ inputs.aws_region }}
-          role-to-assume: ${{ inputs.role_to_assume }}
+          role-to-assume: ${{ inputs.role_to_assume || vars.VULCAN_ARTIFACT_PUBLISHER_ROLE_ARN }}
           role-session-name: vulcan-publish-${{ github.run_id }}
 
       - name: Install aws cli tooling
@@ -134,6 +136,12 @@ jobs:
         run: |
           set -euo pipefail
           aws --version
+          for key in ARTIFACT_BUCKET; do
+            if [[ -z "${!key:-}" ]]; then
+              echo "Missing required ${key}. Set the input or environment variable." >&2
+              exit 1
+            fi
+          done
 
       - name: Download GitHub artifacts
         uses: actions/download-artifact@v7

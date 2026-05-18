@@ -60,6 +60,16 @@ on:
         required: false
         default: false
         type: boolean
+      sse_kms_key_id:
+        description: Optional KMS key ID, alias, or ARN for uploaded artifacts.
+        required: false
+        default: ""
+        type: string
+      cloudfront_distribution_id:
+        description: Optional CloudFront distribution ID to invalidate after publishing.
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -79,6 +89,8 @@ jobs:
       DOWNLOAD_PATH: ${{ inputs.download_path }}
       MIN_ARTIFACT_COUNT: ${{ inputs.min_artifact_count }}
       PUBLISH_MANIFEST: ${{ inputs.publish_manifest }}
+      SSE_KMS_KEY_ID: ${{ inputs.sse_kms_key_id }}
+      CLOUDFRONT_DISTRIBUTION_ID: ${{ inputs.cloudfront_distribution_id }}
       GH_TOKEN: ${{ github.token }}
 
     steps:
@@ -163,6 +175,19 @@ jobs:
               print("+", " ".join(args), flush=True)
               subprocess.run(args, check=True)
 
+          def s3_cp_args() -> list[str]:
+              args = ["--sse", "aws:kms"]
+              key_id = os.environ.get("SSE_KMS_KEY_ID", "").strip()
+              if key_id:
+                  args.extend(["--sse-kms-key-id", key_id])
+              return args
+
+          def artifact_folder_key(raw: str) -> str:
+              value = raw.strip()
+              if value in {"", ".", "./"}:
+                  return ""
+              return clean_path_part(value, "artifacts")
+
           def sha256_file(path: Path) -> str:
               h = hashlib.sha256()
               with path.open("rb") as f:
@@ -219,7 +244,7 @@ jobs:
               or os.environ["GITHUB_REF_NAME"]
           )
           encoded_branch_key = branch_key(branch_raw)
-          artifact_folder = clean_path_part(os.environ["ARTIFACT_FOLDER_INPUT"], "artifacts")
+          artifact_folder = artifact_folder_key(os.environ["ARTIFACT_FOLDER_INPUT"])
 
           download_path = Path(os.environ["DOWNLOAD_PATH"])
           if not download_path.exists():
@@ -234,7 +259,10 @@ jobs:
               raise SystemExit(f"Expected at least {min_count} artifact(s), found {len(files)}")
 
           bucket = os.environ["ARTIFACT_BUCKET"]
-          prefix = f"{repo_name}/{encoded_branch_key}/{artifact_folder}"
+          prefix_parts = [repo_name, encoded_branch_key]
+          if artifact_folder:
+              prefix_parts.append(artifact_folder)
+          prefix = "/".join(prefix_parts)
           now = datetime.now(timezone.utc).isoformat()
           manifest_entries = []
 
@@ -242,7 +270,7 @@ jobs:
               rel = path.relative_to(download_path)
               rel_key = "/".join(rel.parts)
               target = f"s3://{bucket}/{prefix}/{rel_key}"
-              run("aws", "s3", "cp", str(path), target)
+              run("aws", "s3", "cp", str(path), target, *s3_cp_args())
               manifest_entries.append({
                   "path": rel_key,
                   "s3_key": f"{prefix}/{rel_key}",
@@ -272,6 +300,7 @@ jobs:
                   "aws", "s3", "cp", str(manifest_path),
                   f"s3://{bucket}/{prefix}/manifest.json",
                   "--content-type", "application/json",
+                  *s3_cp_args(),
               )
 
           branches = fetch_branches(github_repo, os.environ["GH_TOKEN"])
@@ -281,7 +310,16 @@ jobs:
               "aws", "s3", "cp", str(branches_path),
               f"s3://{bucket}/{repo_name}/branches.json",
               "--content-type", "application/json",
+              *s3_cp_args(),
           )
+
+          distribution_id = os.environ.get("CLOUDFRONT_DISTRIBUTION_ID", "").strip()
+          if distribution_id:
+              run(
+                  "aws", "cloudfront", "create-invalidation",
+                  "--distribution-id", distribution_id,
+                  "--paths", f"/{prefix}/*", f"/{repo_name}/branches.json",
+              )
 
           print(f"published_count={len(files)}")
           print(f"published_prefix=s3://{bucket}/{prefix}/")

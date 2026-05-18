@@ -1,52 +1,51 @@
-# Neural Edge Acceleration Toolkit (NEAT)
+# SiMa.ai Neat
 
-<img src="./neat-logo.png" alt="NEAT Logo" width="35%" />
+<p>
+  <img src="./sima-ai-logo.svg" alt="SiMa.ai" width="180" />
+</p>
 
-Build production-grade multimedia + ML pipelines without fighting pipeline complexity.
+**SiMa.ai Neat** is an application-development framework for building and running AI applications on the SiMa.ai platform. It provides Python and C++ APIs for working with compiled model artifacts, composing application logic, and running AI pipelines on Modalix and SiMa.ai SoCs.
 
-**SiMa NEAT** is a modern **C++20** library (with **Python bindings**) for building, validating, running, and debugging **GStreamer** pipelines through a stable, composable API.
+Neat sits at the application layer of the SiMa.ai software stack. It uses GStreamer-based execution underneath while giving developers a higher-level model for building, testing, and maintaining edge AI applications.
 
-Our mission is simple: make the transition from Nvidia-based application stacks to SiMa as smooth as possible, while preserving the full power and flexibility of GStreamer.
+## Start Here
 
-## Why SiMa-NEAT?
+- **Documentation:** [docs.sima-neat.com](https://docs.sima-neat.com)
+- **Framework:** [core](https://github.com/sima-neat/core)
+- **SDK environment:** [sdk](https://github.com/sima-neat/sdk)
+- **Model compilation:** [model-sdk](https://github.com/sima-neat/model-sdk)
+- **Examples and applications:** [apps](https://github.com/sima-neat/apps)
 
-GStreamer is powerful, but hand-authoring and maintaining complex pipelines can be brittle and hard to scale.
+## What Neat Provides
 
-SiMa-NEAT gives you a higher-level **pipeline-as-code** workflow so teams can:
+- A Python and C++ programming model for composing AI applications
+- A `Model`, `Session`, and `Run` workflow for moving from compiled model package to runtime execution
+- Reusable application patterns for object detection, segmentation, tracking, depth estimation, and related edge AI workloads
+- SDK and model tooling for building against SiMa.ai targets
+- Diagnostics and workflow tools for validating pipelines and inspecting application behavior
 
-- Compose pipelines from reusable building blocks
-- Validate configurations earlier and catch errors faster
-- Run and debug pipelines with clear, structured interfaces
-- Produce ML-friendly outputs (including tensors)
-- Keep configurations reproducible across environments
+## Repository Map
 
-## What You Get
+| Repository | Purpose |
+| --- | --- |
+| [core](https://github.com/sima-neat/core) | Neat framework core, APIs, tutorials, and documentation source |
+| [sdk](https://github.com/sima-neat/sdk) | Cross-compilation SDK environment with model SDK extension support |
+| [model-sdk](https://github.com/sima-neat/model-sdk) | Model compilation extension for preparing models for SiMa.ai hardware |
+| [apps](https://github.com/sima-neat/apps) | Example applications and reference pipeline patterns |
+| [sima-cli](https://github.com/sima-neat/sima-cli) | Developer utilities for setup, assets, and workflow automation |
+| [insight](https://github.com/sima-neat/insight) | Performance visualization and interactive testing for Neat applications |
+| [llima](https://github.com/sima-neat/llima) | Runtime and compile-time tooling for LLM and VLM workloads |
+| [playbooks](https://github.com/sima-neat/playbooks) | Coding-agent playbooks for common Neat development workflows |
 
-- **C++20-first API** for performance-critical systems
-- **Python API** for fast iteration and experimentation
-- **Composable architecture** for maintainable pipeline design
-- **Deterministic, reproducible configs** for reliable deployments
-- **Developer-friendly debugging** for faster troubleshooting
+Private repositories support internal integrations, build infrastructure, model assets, and fleet-based test execution.
 
-## Documentation
+## Development Model
 
-Official docs: **https://neat.modalix.info**
+Neat is designed for teams building production AI applications at the edge:
 
-## Organization Focus
+- Build and validate application behavior close to the target runtime
+- Keep model packages, application composition, and runtime execution as separate concerns
+- Reuse tested application patterns instead of hand-maintaining brittle pipelines
+- Support both direct developer workflows and agent-assisted development
 
-This organization manages all things related to **NEAT**:
-
-- Core library development
-- Python bindings
-- Integration examples
-- Tooling and workflow support
-- Documentation and best practices
-
-## Vision
-
-SiMa-NEAT is built for teams who need both:
-
-- The low-level power of GStreamer
-- A clean, scalable developer experience for modern ML/video systems
-
-If your pipeline stack is growing in complexity, SiMa-NEAT is designed to help you move faster with confidence.
+For installation, build steps, tutorials, and API references, use the current docs at [docs.sima-neat.com](https://docs.sima-neat.com).

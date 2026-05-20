@@ -24,9 +24,9 @@ on:
         default: dev
         type: string
       artifact_folder:
-        description: Folder under repo/branch where artifacts are stored.
+        description: Optional folder inside the commit artifact directory.
         required: false
-        default: artifacts
+        default: ""
         type: string
       artifact_pattern:
         description: actions/download-artifact pattern.
@@ -262,6 +262,8 @@ jobs:
           )
           encoded_branch_key = branch_key(branch_raw)
           artifact_folder = artifact_folder_key(os.environ["ARTIFACT_FOLDER_INPUT"])
+          commit = os.environ["GITHUB_SHA"]
+          short_commit = commit[:12]
 
           download_path = Path(os.environ["DOWNLOAD_PATH"])
           if not download_path.exists():
@@ -276,7 +278,7 @@ jobs:
               raise SystemExit(f"Expected at least {min_count} artifact(s), found {len(files)}")
 
           bucket = os.environ["ARTIFACT_BUCKET"]
-          prefix_parts = [repo_name, encoded_branch_key]
+          prefix_parts = [repo_name, encoded_branch_key, short_commit]
           if artifact_folder:
               prefix_parts.append(artifact_folder)
           prefix = "/".join(prefix_parts)
@@ -304,8 +306,9 @@ jobs:
                   "repository_key": repo_name,
                   "branch": branch_raw,
                   "branch_key": encoded_branch_key,
+                  "commit_folder": short_commit,
                   "artifact_folder": artifact_folder,
-                  "commit": os.environ["GITHUB_SHA"],
+                  "commit": commit,
                   "run_id": os.environ["GITHUB_RUN_ID"],
                   "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
                   "published_at_utc": now,
@@ -335,7 +338,7 @@ jobs:
               run(
                   "aws", "cloudfront", "create-invalidation",
                   "--distribution-id", distribution_id,
-                  "--paths", f"/{prefix}/*", f"/{repo_name}/branches.json",
+                  "--paths", f"/{prefix}/*", f"/{repo_name}/{encoded_branch_key}/latest.tag", f"/{repo_name}/branches.json",
               )
 
           print(f"published_count={len(files)}")

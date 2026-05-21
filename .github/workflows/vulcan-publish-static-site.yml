@@ -1,0 +1,251 @@
+name: Vulcan Publish Static Site
+
+on:
+  workflow_call:
+    inputs:
+      bucket:
+        description: Static site S3 bucket name.
+        required: false
+        default: ""
+        type: string
+      role_to_assume:
+        description: AWS IAM role ARN to assume with GitHub OIDC.
+        required: false
+        default: ""
+        type: string
+      aws_region:
+        description: AWS region for S3 and STS.
+        required: false
+        default: ""
+        type: string
+      environment_name:
+        description: GitHub environment name.
+        required: true
+        type: string
+      site_key:
+        description: Variable namespace suffix for site-specific env vars, for example DOCS or APPS_PORTAL.
+        required: false
+        default: STATIC_SITE
+        type: string
+      artifact_pattern:
+        description: actions/download-artifact pattern for the static site bundle.
+        required: true
+        type: string
+      download_path:
+        description: Local path where the static site artifact is downloaded.
+        required: false
+        default: _vulcan/static-site
+        type: string
+      s3_prefix:
+        description: Optional prefix under the bucket. Empty publishes to the bucket root.
+        required: false
+        default: ""
+        type: string
+      delete_removed:
+        description: Delete files from S3 that no longer exist in the static site artifact.
+        required: false
+        default: true
+        type: boolean
+      sse_kms_key_id:
+        description: Optional KMS key ID, alias, or ARN for uploaded objects.
+        required: false
+        default: ""
+        type: string
+      cloudfront_distribution_id:
+        description: Optional CloudFront distribution ID to invalidate after publishing.
+        required: false
+        default: ""
+        type: string
+      cloudfront_paths:
+        description: Space-separated CloudFront invalidation paths.
+        required: false
+        default: "/*"
+        type: string
+      install_awscli:
+        description: Install AWS CLI v2 before publishing.
+        required: false
+        default: false
+        type: boolean
+      cleanup_github_artifacts:
+        description: Delete matching GitHub Actions artifacts after successful publish.
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  actions: write
+  id-token: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  publish:
+    name: Publish static site
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment_name }}
+    env:
+      AWS_REGION: ${{ inputs.aws_region || vars[format('VULCAN_{0}_AWS_REGION', inputs.site_key)] || vars.VULCAN_AWS_REGION || 'us-west-2' }}
+      SITE_BUCKET: ${{ inputs.bucket || vars[format('VULCAN_{0}_BUCKET', inputs.site_key)] || vars.VULCAN_STATIC_SITE_BUCKET }}
+      ROLE_TO_ASSUME: ${{ inputs.role_to_assume || vars[format('VULCAN_{0}_PUBLISHER_ROLE_ARN', inputs.site_key)] || vars.VULCAN_STATIC_SITE_PUBLISHER_ROLE_ARN }}
+      DOWNLOAD_PATH: ${{ inputs.download_path }}
+      S3_PREFIX: ${{ inputs.s3_prefix }}
+      SSE_KMS_KEY_ID: ${{ inputs.sse_kms_key_id || vars[format('VULCAN_{0}_KMS_KEY_ID', inputs.site_key)] || vars.VULCAN_STATIC_SITE_KMS_KEY_ID }}
+      CLOUDFRONT_DISTRIBUTION_ID: ${{ inputs.cloudfront_distribution_id || vars[format('VULCAN_{0}_CLOUDFRONT_DISTRIBUTION_ID', inputs.site_key)] || vars.VULCAN_STATIC_SITE_CLOUDFRONT_DISTRIBUTION_ID }}
+      CLOUDFRONT_PATHS: ${{ inputs.cloudfront_paths }}
+      ARTIFACT_PATTERN: ${{ inputs.artifact_pattern }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Verify settings
+        run: |
+          set -euo pipefail
+          for key in AWS_REGION SITE_BUCKET ROLE_TO_ASSUME DOWNLOAD_PATH; do
+            if [[ -z "${!key:-}" ]]; then
+              echo "Missing required ${key}." >&2
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.ROLE_TO_ASSUME }}
+          role-session-name: vulcan-static-site-${{ github.run_id }}
+
+      - name: Install aws cli tooling
+        if: ${{ inputs.install_awscli }}
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) aws_arch="x86_64" ;;
+            aarch64|arm64) aws_arch="aarch64" ;;
+            *) echo "Unsupported architecture for AWS CLI v2: $(uname -m)" >&2; exit 1 ;;
+          esac
+
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+          curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${aws_arch}.zip" -o "$tmpdir/awscliv2.zip"
+          python3 -m zipfile -e "$tmpdir/awscliv2.zip" "$tmpdir"
+
+          install_dir="${HOME}/.local/aws-cli"
+          bin_dir="${HOME}/.local/bin"
+          mkdir -p "$bin_dir"
+
+          install_args=(-i "$install_dir" -b "$bin_dir")
+          if [[ -x "$bin_dir/aws" ]]; then
+            install_args+=(--update)
+          fi
+          "$tmpdir/aws/install" "${install_args[@]}"
+
+          echo "$bin_dir" >> "$GITHUB_PATH"
+          "$bin_dir/aws" --version
+
+      - name: Verify aws cli is available
+        run: |
+          set -euo pipefail
+          aws --version
+
+      - name: Download static site artifact
+        uses: actions/download-artifact@v7
+        with:
+          pattern: ${{ inputs.artifact_pattern }}
+          path: ${{ inputs.download_path }}
+          merge-multiple: true
+
+      - name: Verify static site artifact
+        run: |
+          set -euo pipefail
+          test -d "${DOWNLOAD_PATH}"
+          test -f "${DOWNLOAD_PATH}/index.html"
+
+      - name: Publish static site to S3
+        run: |
+          set -euo pipefail
+
+          target="s3://${SITE_BUCKET}"
+          prefix="${S3_PREFIX#/}"
+          prefix="${prefix%/}"
+          if [[ -n "${prefix}" ]]; then
+            target="${target}/${prefix}"
+          fi
+
+          sync_args=(
+            "${DOWNLOAD_PATH}/"
+            "${target}/"
+          )
+          if [[ "${{ inputs.delete_removed }}" == "true" ]]; then
+            sync_args+=(--delete)
+          fi
+          if [[ -n "${SSE_KMS_KEY_ID}" ]]; then
+            sync_args+=(--sse aws:kms --sse-kms-key-id "${SSE_KMS_KEY_ID}")
+          fi
+
+          aws s3 sync "${sync_args[@]}"
+          echo "Published static site to ${target}/"
+
+      - name: Invalidate CloudFront
+        if: env.CLOUDFRONT_DISTRIBUTION_ID != ''
+        run: |
+          set -euo pipefail
+          read -r -a paths <<< "${CLOUDFRONT_PATHS}"
+          aws cloudfront create-invalidation \
+            --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID}" \
+            --paths "${paths[@]}"
+
+      - name: Delete temporary GitHub artifacts
+        if: ${{ inputs.cleanup_github_artifacts }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import fnmatch
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          run_id = os.environ["GITHUB_RUN_ID"]
+          token = os.environ["GH_TOKEN"]
+          pattern = os.environ["ARTIFACT_PATTERN"]
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def request(method: str, url: str) -> bytes:
+              req = urllib.request.Request(url, headers=headers, method=method)
+              try:
+                  with urllib.request.urlopen(req) as resp:
+                      return resp.read()
+              except urllib.error.HTTPError as exc:
+                  body = exc.read().decode("utf-8", errors="replace")
+                  raise SystemExit(f"{method} {url} failed: HTTP {exc.code}: {body}") from exc
+
+          deleted = 0
+          page = 1
+          while True:
+              url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100&page={page}"
+              payload = json.loads(request("GET", url).decode("utf-8"))
+              artifacts = payload.get("artifacts", [])
+              if not artifacts:
+                  break
+
+              for artifact in artifacts:
+                  name = str(artifact.get("name", ""))
+                  artifact_id = artifact.get("id")
+                  if artifact_id is not None and fnmatch.fnmatchcase(name, pattern):
+                      delete_url = f"https://api.github.com/repos/{repo}/actions/artifacts/{artifact_id}"
+                      request("DELETE", delete_url)
+                      print(f"Deleted temporary GitHub artifact: {name} ({artifact_id})")
+                      deleted += 1
+
+              if len(artifacts) < 100:
+                  break
+              page += 1
+
+          print(f"deleted_github_artifacts={deleted}")
+          PY

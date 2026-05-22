@@ -1,0 +1,275 @@
+name: Vulcan Resolve Config
+
+on:
+  workflow_call:
+    inputs:
+      vulcan_env:
+        description: Vulcan environment name.
+        required: false
+        default: dev
+        type: string
+      config_s3_uri:
+        description: Optional S3 URI to the Terraform-managed Vulcan environment config JSON.
+        required: false
+        default: ""
+        type: string
+      config_reader_role_arn:
+        description: Optional IAM role ARN allowed to read the Vulcan environment config JSON.
+        required: false
+        default: ""
+        type: string
+    outputs:
+      vulcan_env:
+        description: Resolved Vulcan environment name.
+        value: ${{ jobs.resolve.outputs.vulcan_env }}
+      config_s3_uri:
+        description: S3 URI used to fetch the Vulcan environment config.
+        value: ${{ jobs.resolve.outputs.config_s3_uri }}
+      config_reader_role_arn:
+        description: IAM role ARN used to fetch the Vulcan environment config.
+        value: ${{ jobs.resolve.outputs.config_reader_role_arn }}
+      aws_region:
+        description: AWS region for this Vulcan environment.
+        value: ${{ jobs.resolve.outputs.aws_region }}
+      sdk_cache:
+        description: Default SDK cache label.
+        value: ${{ jobs.resolve.outputs.sdk_cache }}
+      capacity:
+        description: Default capacity label.
+        value: ${{ jobs.resolve.outputs.capacity }}
+      docs_capacity:
+        description: Default docs capacity label.
+        value: ${{ jobs.resolve.outputs.docs_capacity }}
+      sysdoc_capacity:
+        description: Default sysdoc capacity label.
+        value: ${{ jobs.resolve.outputs.sysdoc_capacity }}
+      artifact_base_url:
+        description: Artifact CloudFront base URL.
+        value: ${{ jobs.resolve.outputs.artifact_base_url }}
+      artifact_bucket:
+        description: Artifact S3 bucket.
+        value: ${{ jobs.resolve.outputs.artifact_bucket }}
+      artifact_publisher_role_arn:
+        description: Artifact publisher role ARN.
+        value: ${{ jobs.resolve.outputs.artifact_publisher_role_arn }}
+      artifact_kms_key_id:
+        description: Artifact KMS key ID or alias.
+        value: ${{ jobs.resolve.outputs.artifact_kms_key_id }}
+      artifact_cloudfront_distribution_id:
+        description: Artifact CloudFront distribution ID.
+        value: ${{ jobs.resolve.outputs.artifact_cloudfront_distribution_id }}
+      docs_base_url:
+        description: Docs CloudFront base URL.
+        value: ${{ jobs.resolve.outputs.docs_base_url }}
+      docs_bucket:
+        description: Docs S3 bucket.
+        value: ${{ jobs.resolve.outputs.docs_bucket }}
+      docs_publisher_role_arn:
+        description: Docs publisher role ARN.
+        value: ${{ jobs.resolve.outputs.docs_publisher_role_arn }}
+      docs_kms_key_id:
+        description: Docs KMS key ID or alias.
+        value: ${{ jobs.resolve.outputs.docs_kms_key_id }}
+      docs_cloudfront_distribution_id:
+        description: Docs CloudFront distribution ID.
+        value: ${{ jobs.resolve.outputs.docs_cloudfront_distribution_id }}
+      sysdoc_base_url:
+        description: Sysdoc CloudFront base URL.
+        value: ${{ jobs.resolve.outputs.sysdoc_base_url }}
+      sysdoc_bucket:
+        description: Sysdoc S3 bucket.
+        value: ${{ jobs.resolve.outputs.sysdoc_bucket }}
+      sysdoc_publisher_role_arn:
+        description: Sysdoc publisher role ARN.
+        value: ${{ jobs.resolve.outputs.sysdoc_publisher_role_arn }}
+      sysdoc_kms_key_id:
+        description: Sysdoc KMS key ID or alias.
+        value: ${{ jobs.resolve.outputs.sysdoc_kms_key_id }}
+      sysdoc_cloudfront_distribution_id:
+        description: Sysdoc CloudFront distribution ID.
+        value: ${{ jobs.resolve.outputs.sysdoc_cloudfront_distribution_id }}
+      apps_portal_base_url:
+        description: Apps portal CloudFront base URL.
+        value: ${{ jobs.resolve.outputs.apps_portal_base_url }}
+      apps_portal_bucket:
+        description: Apps portal S3 bucket.
+        value: ${{ jobs.resolve.outputs.apps_portal_bucket }}
+      apps_portal_publisher_role_arn:
+        description: Apps portal publisher role ARN.
+        value: ${{ jobs.resolve.outputs.apps_portal_publisher_role_arn }}
+      apps_portal_kms_key_id:
+        description: Apps portal KMS key ID or alias.
+        value: ${{ jobs.resolve.outputs.apps_portal_kms_key_id }}
+      apps_portal_cloudfront_distribution_id:
+        description: Apps portal CloudFront distribution ID.
+        value: ${{ jobs.resolve.outputs.apps_portal_cloudfront_distribution_id }}
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  resolve:
+    name: Resolve Vulcan config
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.vulcan_env }}
+    outputs:
+      vulcan_env: ${{ steps.config.outputs.vulcan_env }}
+      config_s3_uri: ${{ steps.config.outputs.config_s3_uri }}
+      config_reader_role_arn: ${{ steps.config.outputs.config_reader_role_arn }}
+      aws_region: ${{ steps.config.outputs.aws_region }}
+      sdk_cache: ${{ steps.config.outputs.sdk_cache }}
+      capacity: ${{ steps.config.outputs.capacity }}
+      docs_capacity: ${{ steps.config.outputs.docs_capacity }}
+      sysdoc_capacity: ${{ steps.config.outputs.sysdoc_capacity }}
+      artifact_base_url: ${{ steps.config.outputs.artifact_base_url }}
+      artifact_bucket: ${{ steps.config.outputs.artifact_bucket }}
+      artifact_publisher_role_arn: ${{ steps.config.outputs.artifact_publisher_role_arn }}
+      artifact_kms_key_id: ${{ steps.config.outputs.artifact_kms_key_id }}
+      artifact_cloudfront_distribution_id: ${{ steps.config.outputs.artifact_cloudfront_distribution_id }}
+      docs_base_url: ${{ steps.config.outputs.docs_base_url }}
+      docs_bucket: ${{ steps.config.outputs.docs_bucket }}
+      docs_publisher_role_arn: ${{ steps.config.outputs.docs_publisher_role_arn }}
+      docs_kms_key_id: ${{ steps.config.outputs.docs_kms_key_id }}
+      docs_cloudfront_distribution_id: ${{ steps.config.outputs.docs_cloudfront_distribution_id }}
+      sysdoc_base_url: ${{ steps.config.outputs.sysdoc_base_url }}
+      sysdoc_bucket: ${{ steps.config.outputs.sysdoc_bucket }}
+      sysdoc_publisher_role_arn: ${{ steps.config.outputs.sysdoc_publisher_role_arn }}
+      sysdoc_kms_key_id: ${{ steps.config.outputs.sysdoc_kms_key_id }}
+      sysdoc_cloudfront_distribution_id: ${{ steps.config.outputs.sysdoc_cloudfront_distribution_id }}
+      apps_portal_base_url: ${{ steps.config.outputs.apps_portal_base_url }}
+      apps_portal_bucket: ${{ steps.config.outputs.apps_portal_bucket }}
+      apps_portal_publisher_role_arn: ${{ steps.config.outputs.apps_portal_publisher_role_arn }}
+      apps_portal_kms_key_id: ${{ steps.config.outputs.apps_portal_kms_key_id }}
+      apps_portal_cloudfront_distribution_id: ${{ steps.config.outputs.apps_portal_cloudfront_distribution_id }}
+    steps:
+      - name: Resolve config location
+        id: location
+        shell: bash
+        env:
+          INPUT_VULCAN_ENV: ${{ inputs.vulcan_env }}
+          INPUT_CONFIG_S3_URI: ${{ inputs.config_s3_uri }}
+          INPUT_CONFIG_READER_ROLE_ARN: ${{ inputs.config_reader_role_arn }}
+        run: |
+          set -euo pipefail
+
+          env_name="${INPUT_VULCAN_ENV:-dev}"
+          case "${env_name}" in
+            dev)
+              default_config_s3_uri="s3://sima-neat-artifacts-dev/_vulcan/github-actions/environment.json"
+              default_reader_role_arn="arn:aws:iam::990858070801:role/NeatDevVulcanConfigReaderRole"
+              ;;
+            stg|staging)
+              env_name="stg"
+              default_config_s3_uri="s3://sima-neat-artifacts-staging/_vulcan/github-actions/environment.json"
+              default_reader_role_arn="arn:aws:iam::${{ vars.VULCAN_STG_AWS_ACCOUNT_ID }}:role/NeatStagingVulcanConfigReaderRole"
+              ;;
+            prod|production)
+              env_name="prod"
+              default_config_s3_uri="s3://sima-neat-artifacts-production/_vulcan/github-actions/environment.json"
+              default_reader_role_arn="arn:aws:iam::${{ vars.VULCAN_PROD_AWS_ACCOUNT_ID }}:role/NeatProductionVulcanConfigReaderRole"
+              ;;
+            *)
+              echo "Unsupported Vulcan environment: ${env_name}" >&2
+              exit 1
+              ;;
+          esac
+
+          config_s3_uri="${INPUT_CONFIG_S3_URI:-${default_config_s3_uri}}"
+          reader_role_arn="${INPUT_CONFIG_READER_ROLE_ARN:-${default_reader_role_arn}}"
+
+          if [[ -z "${reader_role_arn}" || "${reader_role_arn}" == *":::"* ]]; then
+            echo "Missing config reader role ARN for Vulcan environment '${env_name}'." >&2
+            exit 1
+          fi
+
+          {
+            echo "vulcan_env=${env_name}"
+            echo "config_s3_uri=${config_s3_uri}"
+            echo "config_reader_role_arn=${reader_role_arn}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: us-west-2
+          role-to-assume: ${{ steps.location.outputs.config_reader_role_arn }}
+          role-session-name: vulcan-config-${{ github.run_id }}
+
+      - name: Fetch and normalize Vulcan config
+        id: config
+        shell: bash
+        env:
+          INPUT_VULCAN_ENV: ${{ steps.location.outputs.vulcan_env }}
+          INPUT_CONFIG_S3_URI: ${{ steps.location.outputs.config_s3_uri }}
+          INPUT_CONFIG_READER_ROLE_ARN: ${{ steps.location.outputs.config_reader_role_arn }}
+        run: |
+          set -euo pipefail
+
+          env_name="${INPUT_VULCAN_ENV}"
+          config_s3_uri="${INPUT_CONFIG_S3_URI}"
+          config_file="$(mktemp)"
+          aws s3 cp "${config_s3_uri}" "${config_file}" --only-show-errors
+          jq -e . "${config_file}" >/dev/null
+
+          config_env="$(jq -r '.environment // empty' "${config_file}")"
+          case "${config_env}:${env_name}" in
+            :*|dev:dev|stg:stg|staging:stg|prod:prod|production:prod)
+              ;;
+            *)
+            echo "Config environment '${config_env}' does not match requested environment '${env_name}'." >&2
+            exit 1
+              ;;
+          esac
+
+          emit() {
+            local name="$1"
+            local query="$2"
+            local fallback="${3:-}"
+            local value
+            value="$(jq -er "${query} // empty" "${config_file}" 2>/dev/null || true)"
+            if [[ -z "${value}" ]]; then
+              value="${fallback}"
+            fi
+            printf '%s=%s\n' "${name}" "${value}" >> "${GITHUB_OUTPUT}"
+          }
+
+          # shellcheck disable=SC2129
+          printf 'vulcan_env=%s\n' "${env_name}" >> "${GITHUB_OUTPUT}"
+          printf 'config_s3_uri=%s\n' "${config_s3_uri}" >> "${GITHUB_OUTPUT}"
+          printf 'config_reader_role_arn=%s\n' "${INPUT_CONFIG_READER_ROLE_ARN}" >> "${GITHUB_OUTPUT}"
+          emit aws_region '.aws_region' us-west-2
+          emit sdk_cache '.runner.default_sdk_cache' sdk-latest
+          emit capacity '.runner.default_capacity' default
+          emit docs_capacity '.runner.docs_capacity' cheap
+          emit sysdoc_capacity '.runner.sysdoc_capacity' cheap
+          emit artifact_base_url '.artifacts.base_url'
+          emit artifact_bucket '.artifacts.bucket'
+          emit artifact_publisher_role_arn '.artifacts.publisher_role_arn'
+          emit artifact_kms_key_id '.artifacts.kms_key_id'
+          emit artifact_cloudfront_distribution_id '.artifacts.cloudfront_distribution_id'
+          emit docs_base_url '.docs.base_url'
+          emit docs_bucket '.docs.bucket'
+          emit docs_publisher_role_arn '.docs.publisher_role_arn'
+          emit docs_kms_key_id '.docs.kms_key_id'
+          emit docs_cloudfront_distribution_id '.docs.cloudfront_distribution_id'
+          emit sysdoc_base_url '.sysdoc.base_url'
+          emit sysdoc_bucket '.sysdoc.bucket'
+          emit sysdoc_publisher_role_arn '.sysdoc.publisher_role_arn'
+          emit sysdoc_kms_key_id '.sysdoc.kms_key_id'
+          emit sysdoc_cloudfront_distribution_id '.sysdoc.cloudfront_distribution_id'
+          emit apps_portal_base_url '.apps_portal.base_url'
+          emit apps_portal_bucket '.apps_portal.bucket'
+          emit apps_portal_publisher_role_arn '.apps_portal.publisher_role_arn'
+          emit apps_portal_kms_key_id '.apps_portal.kms_key_id'
+          emit apps_portal_cloudfront_distribution_id '.apps_portal.cloudfront_distribution_id'
+
+          for required in aws_region artifact_bucket artifact_publisher_role_arn; do
+            if ! grep -q "^${required}=." "${GITHUB_OUTPUT}"; then
+              echo "Missing required Vulcan config output: ${required}" >&2
+              exit 1
+            fi
+          done

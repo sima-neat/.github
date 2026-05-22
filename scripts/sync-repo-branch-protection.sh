@@ -96,7 +96,9 @@ list_repos() {
   while true; do
     local url="${API_BASE}/orgs/${ORG_NAME}/repos?type=all&per_page=${PER_PAGE}&page=${page}"
     local resp
-    resp="$(api GET "$url")"
+    if ! resp="$(api GET "$url")"; then
+      return 1
+    fi
     local count
     count="$(jq 'length' <<<"$resp")"
     if [[ "$count" == "0" ]]; then
@@ -113,7 +115,9 @@ list_release_branches() {
   while true; do
     local url="${API_BASE}/repos/${ORG_NAME}/${repo}/branches?per_page=${PER_PAGE}&page=${page}"
     local resp
-    resp="$(api GET "$url")"
+    if ! resp="$(api GET "$url")"; then
+      return 1
+    fi
     local count
     count="$(jq 'length' <<<"$resp")"
     if [[ "$count" == "0" ]]; then
@@ -173,7 +177,10 @@ protect_branch() {
   rm -f "$headers_file" "$body_file"
 }
 
-mapfile -t protected_branches < <(jq -r '.protected_branches[]?' "${POLICY_FILE}")
+protected_branches=()
+while IFS= read -r branch; do
+  protected_branches+=("$branch")
+done < <(jq -r '.protected_branches[]?' "${POLICY_FILE}")
 if [[ "${#protected_branches[@]}" -eq 0 ]]; then
   main_branch="$(jq -r '.main_branch // empty' "${POLICY_FILE}")"
   if [[ -n "${main_branch}" ]]; then
@@ -184,7 +191,16 @@ main_payload="$(jq -c '.main_protection' "${POLICY_FILE}")"
 release_payload="$(jq -c '.release_protection' "${POLICY_FILE}")"
 
 echo "Fetching repositories for org ${ORG_NAME}..."
-mapfile -t repos < <(list_repos)
+repos_file="$(mktemp)"
+if ! list_repos >"${repos_file}"; then
+  rm -f "${repos_file}"
+  exit 1
+fi
+repos=()
+while IFS= read -r repo; do
+  repos+=("$repo")
+done <"${repos_file}"
+rm -f "${repos_file}"
 echo "Found ${#repos[@]} active repositories."
 
 for repo in "${repos[@]}"; do
@@ -198,7 +214,16 @@ for repo in "${repos[@]}"; do
     fi
   done
 
-  mapfile -t release_branches < <(list_release_branches "$repo" | sort -u)
+  release_branches_file="$(mktemp)"
+  if ! list_release_branches "$repo" | sort -u >"${release_branches_file}"; then
+    rm -f "${release_branches_file}"
+    exit 1
+  fi
+  release_branches=()
+  while IFS= read -r branch; do
+    release_branches+=("$branch")
+  done <"${release_branches_file}"
+  rm -f "${release_branches_file}"
   if [[ "${#release_branches[@]}" -eq 0 ]]; then
     echo "No release-* branches found."
     continue

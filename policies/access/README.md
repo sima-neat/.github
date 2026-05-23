@@ -12,7 +12,7 @@ exceptions.
 The current `repo-permissions` policy remains the enforcing policy while this
 policy is reviewed and validated.
 
-Current mode: report-only.
+Current mode: report-only through the `Apply Access Policy` workflow.
 
 Do not delete the legacy `repo-permissions` policy until the access report
 matches the desired GitHub state and enforcement has been migrated.
@@ -170,12 +170,14 @@ Run these checks before opening a PR:
 jq empty policies/access/config.json
 python3 scripts/report-access-policy.py
 python3 -m py_compile scripts/report-access-policy.py
-actionlint .github/workflows/validate-access-policy.yml
+actionlint .github/workflows/apply-access-policy.yml
 git diff --check
 ```
 
-The `Validate Access Policy` workflow runs the report script on PRs that change
-this policy or its validator.
+The `Apply Access Policy` workflow currently runs in report mode. It validates
+and summarizes this policy on PRs that change the policy or its validator. A
+future enforcing sync script should be wired into the same workflow before the
+old `repo-permissions` workflow is retired.
 
 ## Migration Plan
 

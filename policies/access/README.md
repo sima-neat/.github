@@ -1,30 +1,23 @@
 # Access Policy
 
-This directory defines the planned source of truth for `sima-neat`
-organization access.
+This directory is the source of truth for `sima-neat` organization access.
 
 The policy is intentionally team-centric. Repository access should be granted to
-teams first, and direct user assignments should be temporary, documented
-exceptions.
+teams, not directly to individual users.
 
 ## Status
 
-The current `repo-permissions` policy remains the enforcing policy while this
-policy is reviewed and validated.
+Current mode: enforced through the `Apply Access Policy` workflow.
 
-Current mode: report-only through the `Apply Access Policy` workflow.
-
-Do not delete the legacy `repo-permissions` policy until the access report
-matches the desired GitHub state and enforcement has been migrated.
+The old repo-centric `repo-permissions` policy has been retired. Add team,
+organization-role, and repository access here.
 
 ## Policy Model
 
-`config.json` has four main sections:
+`config.json` has three main sections:
 
 - `teams`: managed team definitions, organization roles, and repository grants.
 - `legacy_teams`: existing teams preserved during migration.
-- `direct_assignments`: direct user grants that are allowed only as documented
-  exceptions.
 - `prune_unmanaged`: future enforcement behavior for access that is present in
   GitHub but absent from policy.
 
@@ -53,8 +46,7 @@ Development`.
 
 ## Organization Roles
 
-`org_roles` documents intended organization-level roles. These roles are not
-enforced by the current report-only script yet.
+`org_roles` defines organization-level roles to assign to managed teams.
 
 Supported role identifiers:
 
@@ -116,51 +108,34 @@ Legacy teams can be removed after:
 2. Repo grants are represented in `teams`.
 3. The access report shows no unmanaged access that should be preserved.
 
-## Direct Assignments
-
-Direct user assignments are disabled by default:
-
-```json
-"direct_assignments": {
-  "allowed": false
-}
-```
-
-Any direct user grant must be listed under `exceptions` with:
-
-- `username`
-- `permission`
-- `reason`
-- `expires`
-
-Exceptions should be short-lived and reviewed before the expiration date.
-
 ## Pruning
 
-`prune_unmanaged` controls future strict enforcement.
+`prune_unmanaged` controls strict enforcement beyond the explicitly managed
+grants.
 
-Keep both values `false` during migration:
+Keep this value `false` during migration:
 
 ```json
 "prune_unmanaged": {
-  "teams": false,
-  "users": false
+  "teams": false
 }
 ```
 
-Only set these to `true` after every intentional team grant and direct user
-exception is represented in policy. Enabling pruning will remove access from
-GitHub if it is not listed in this policy.
+Only set this to `true` after every intentional team grant is represented in
+policy. Enabling pruning will remove team access from GitHub if it is not listed
+in this policy. Preserved legacy teams are exempt from team pruning while they
+remain in `legacy_teams` with `preserve: true`.
 
 ## Workflow
 
 1. Add or update team and repository grants in `config.json`.
-2. Run `python3 scripts/report-access-policy.py`.
+2. Run `python3 scripts/sync-access-policy.py --mode report`.
 3. Review the generated team and repository grant summary.
-4. Move memberships and repo grants in GitHub.
-5. Keep `argo` and `alpha` in place until the new teams are populated.
-6. Switch enforcement from the old repo-centric policy to this policy once the
-   report matches the desired access model.
+4. Open a PR. The workflow runs report mode on PRs.
+5. Merge to `main`. The workflow applies the policy on push and on the hourly
+   schedule.
+6. Use manual `workflow_dispatch` with `mode=apply` to repair drift
+   immediately.
 
 ## Validation
 
@@ -168,24 +143,23 @@ Run these checks before opening a PR:
 
 ```bash
 jq empty policies/access/config.json
-python3 scripts/report-access-policy.py
-python3 -m py_compile scripts/report-access-policy.py
+python3 scripts/sync-access-policy.py --mode report
+python3 -m py_compile scripts/sync-access-policy.py
 actionlint .github/workflows/apply-access-policy.yml
 git diff --check
 ```
 
-The `Apply Access Policy` workflow currently runs in report mode. It validates
-and summarizes this policy on PRs that change the policy or its validator. A
-future enforcing sync script should be wired into the same workflow before the
-old `repo-permissions` workflow is retired.
+The `Apply Access Policy` workflow validates and summarizes this policy on PRs.
+It applies the policy on pushes to `main`, scheduled runs, and manual apply
+runs.
 
 ## Migration Plan
 
-1. Keep the current `repo-permissions` policy as the enforcing source.
-2. Use this policy to review the desired team model.
-3. Move users into `admin`, `dev`, `devops`, `platform`, `release`, and `ae`.
-4. Apply repo grants for the new teams.
-5. Remove direct assignments or convert them to short-lived exceptions.
-6. Remove `argo` and `alpha` grants after migration is complete.
-7. Replace the old repo-centric sync workflow with an enforcing version of this
-   policy.
+1. Move users into `admin`, `dev`, `devops`, `platform`, `release`, and `ae`.
+2. Remove direct assignments in GitHub after equivalent team membership is in
+   place.
+3. Remove `argo` and `alpha` grants after migration is complete.
+4. Delete `argo` and `alpha` from `legacy_teams` once they no longer need
+   protection from pruning.
+5. Enable `prune_unmanaged.teams` only after the policy fully represents
+   intended team access.

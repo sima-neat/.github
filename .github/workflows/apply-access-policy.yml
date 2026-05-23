@@ -4,23 +4,26 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Access policy mode. Report is non-mutating; apply is reserved for the future enforcing sync script.
+        description: Access policy mode. Report is non-mutating; apply enforces teams, org roles, and repo grants.
         required: true
         default: report
         type: choice
         options:
           - report
+          - apply
+  schedule:
+    - cron: "41 * * * *"
   pull_request:
     paths:
       - "policies/access/**"
-      - "scripts/report-access-policy.py"
+      - "scripts/sync-access-policy.py"
       - ".github/workflows/apply-access-policy.yml"
   push:
     branches:
       - main
     paths:
       - "policies/access/**"
-      - "scripts/report-access-policy.py"
+      - "scripts/sync-access-policy.py"
       - ".github/workflows/apply-access-policy.yml"
 
 permissions:
@@ -28,16 +31,33 @@ permissions:
 
 jobs:
   report:
+    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'report') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
       - name: Report access policy
-        run: python3 scripts/report-access-policy.py
+        run: python3 scripts/sync-access-policy.py --mode report
 
-      - name: Reject unsupported apply mode
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode != 'report' }}
+  apply:
+    if: ${{ github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'apply') }}
+    runs-on: ubuntu-latest
+    environment: org-policy
+    env:
+      ORG_NAME: sima-neat
+      ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN != '' && secrets.ORG_ADMIN_TOKEN || secrets.GH_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Validate required secret
         run: |
-          echo "Apply mode is not implemented yet. This workflow currently supports report mode only."
-          exit 1
+          if [[ -z "${ORG_ADMIN_TOKEN}" ]]; then
+            echo "Missing secret. Set ORG_ADMIN_TOKEN or GH_TOKEN in environment org-policy."
+            echo "Token must be authorized for org team, org role, and repo permission administration."
+            exit 1
+          fi
+
+      - name: Apply access policy
+        run: python3 scripts/sync-access-policy.py --mode apply

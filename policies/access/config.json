@@ -103,52 +103,7 @@
       "reason": "Existing early-access/development team; preserve until replacement access is confirmed."
     }
   },
-  "direct_assignments": {
-    "allowed": false,
-    "exceptions": {
-      ".github": [
-        {
-          "username": "shanguangzai",
-          "permission": "admin",
-          "reason": "Temporary org policy bootstrap access.",
-          "expires": "2026-06-30"
-        }
-      ],
-      "docs": [
-        {
-          "username": "dotimothy",
-          "permission": "admin",
-          "reason": "Temporary docs bootstrap access while team model is migrated.",
-          "expires": "2026-06-30"
-        }
-      ],
-      "internals": [
-        {
-          "username": "manuel-roldan",
-          "permission": "admin",
-          "reason": "Temporary internals owner exception.",
-          "expires": "2026-06-30"
-        }
-      ],
-      "models": [
-        {
-          "username": "Onat-Inak",
-          "permission": "admin",
-          "reason": "Temporary models owner exception.",
-          "expires": "2026-06-30"
-        },
-        {
-          "username": "shanguangzai",
-          "permission": "admin",
-          "reason": "Temporary models owner exception.",
-          "expires": "2026-06-30"
-        }
-      ]
-    }
-  },
   "prune_unmanaged": {
-    "teams": false,
-    "users": false
+    "teams": false
   }
 }
-

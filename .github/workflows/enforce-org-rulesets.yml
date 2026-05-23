@@ -8,7 +8,9 @@ on:
     branches:
       - main
     paths:
+      - "policies/repo-codeowners/**"
       - "policies/org-rulesets/**"
+      - "scripts/sync-repo-codeowners.sh"
       - "scripts/sync-org-rulesets.sh"
       - ".github/workflows/enforce-org-rulesets.yml"
 
@@ -34,6 +36,8 @@ jobs:
             exit 1
           fi
 
+      - name: Sync repo CODEOWNERS
+        run: ./scripts/sync-repo-codeowners.sh
+
       - name: Sync org rulesets
         run: ./scripts/sync-org-rulesets.sh
-

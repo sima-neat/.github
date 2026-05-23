@@ -119,12 +119,13 @@ verify_ruleset() {
     .conditions.ref_name.exclude == $expected.conditions.ref_name.exclude and
     ([.rules[].type] | sort) == ([$expected.rules[].type] | sort) and
     (
-      .rules[] | select(.type == "pull_request") | .parameters |
-      .dismiss_stale_reviews_on_push == true and
-      .require_code_owner_review == false and
-      .require_last_push_approval == false and
-      .required_approving_review_count == 1 and
-      .required_review_thread_resolution == true
+      .rules[] | select(.type == "pull_request") | .parameters as $actual_pr |
+      $expected.rules[] | select(.type == "pull_request") | .parameters as $expected_pr |
+      $actual_pr.dismiss_stale_reviews_on_push == $expected_pr.dismiss_stale_reviews_on_push and
+      $actual_pr.require_code_owner_review == $expected_pr.require_code_owner_review and
+      $actual_pr.require_last_push_approval == $expected_pr.require_last_push_approval and
+      $actual_pr.required_approving_review_count == $expected_pr.required_approving_review_count and
+      $actual_pr.required_review_thread_resolution == $expected_pr.required_review_thread_resolution
     )
   ' <<<"$actual" >/dev/null
 }
@@ -171,4 +172,3 @@ rm -f "$rulesets_file"
 
 verify_ruleset "$ruleset_id" "$payload"
 echo "Org ruleset sync complete: ${ruleset_name} (${ruleset_id})"
-

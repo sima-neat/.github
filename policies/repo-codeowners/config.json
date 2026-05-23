@@ -1,0 +1,17 @@
+{
+  "team": {
+    "name": "Reviewers",
+    "slug": "reviewers",
+    "description": "Default pull request reviewers for sima-neat repositories.",
+    "privacy": "closed",
+    "permission": "push"
+  },
+  "branches": ["main", "develop"],
+  "exclude_repos": [],
+  "codeowners_path": ".github/CODEOWNERS",
+  "managed_block": {
+    "start": "# BEGIN sima-neat managed default reviewers",
+    "end": "# END sima-neat managed default reviewers"
+  },
+  "commit_message": "chore: sync default CODEOWNERS reviewers"
+}

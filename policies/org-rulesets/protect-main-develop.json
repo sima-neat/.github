@@ -1,7 +1,7 @@
 {
   "name": "Protect main, develop, and release branches",
   "target": "branch",
-  "enforcement": "evaluate",
+  "enforcement": "active",
   "bypass_actors": [],
   "conditions": {
     "repository_name": {

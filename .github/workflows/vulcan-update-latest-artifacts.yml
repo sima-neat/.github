@@ -67,11 +67,142 @@ jobs:
       SSE_KMS_KEY_ID: ${{ inputs.sse_kms_key_id || vars.VULCAN_ARTIFACT_KMS_KEY_ID }}
 
     steps:
-      - name: Configure AWS credentials
+      - name: Resolve Vulcan config location
+        id: config-location
+        shell: bash
+        env:
+          INPUT_ENVIRONMENT_NAME: ${{ inputs.environment_name }}
+          INPUT_BUCKET: ${{ inputs.bucket }}
+          INPUT_ROLE_TO_ASSUME: ${{ inputs.role_to_assume }}
+          INPUT_SSE_KMS_KEY_ID: ${{ inputs.sse_kms_key_id }}
+          VAR_BUCKET: ${{ vars.VULCAN_ARTIFACT_BUCKET }}
+          VAR_ROLE_TO_ASSUME: ${{ vars.VULCAN_ARTIFACT_PUBLISHER_ROLE_ARN }}
+          VAR_SSE_KMS_KEY_ID: ${{ vars.VULCAN_ARTIFACT_KMS_KEY_ID }}
+          VAR_CONFIG_S3_URI: ${{ vars.VULCAN_CONFIG_S3_URI }}
+          VAR_CONFIG_READER_ROLE_ARN: ${{ vars.VULCAN_CONFIG_READER_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+
+          env_name="${INPUT_ENVIRONMENT_NAME:-dev}"
+          case "${env_name}" in
+            dev)
+              config_env="dev"
+              default_config_s3_uri="s3://sima-neat-vulcan-config-dev/_vulcan/github-actions/environment.json"
+              default_reader_role_arn="arn:aws:iam::990858070801:role/NeatDevVulcanConfigReaderRole"
+              ;;
+            stg|staging)
+              config_env="stg"
+              default_config_s3_uri="s3://sima-neat-vulcan-config-staging/_vulcan/github-actions/environment.json"
+              default_reader_role_arn="arn:aws:iam::987569578021:role/NeatStagingVulcanConfigReaderRole"
+              ;;
+            prod|production)
+              config_env="prod"
+              default_config_s3_uri="s3://sima-neat-vulcan-config-production/_vulcan/github-actions/environment.json"
+              default_reader_role_arn="arn:aws:iam::${{ vars.VULCAN_PROD_AWS_ACCOUNT_ID }}:role/NeatProductionVulcanConfigReaderRole"
+              ;;
+            *)
+              echo "Unsupported Vulcan environment: ${env_name}" >&2
+              exit 1
+              ;;
+          esac
+
+          bucket="${INPUT_BUCKET:-${VAR_BUCKET:-}}"
+          role_to_assume="${INPUT_ROLE_TO_ASSUME:-${VAR_ROLE_TO_ASSUME:-}}"
+          sse_kms_key_id="${INPUT_SSE_KMS_KEY_ID:-${VAR_SSE_KMS_KEY_ID:-}}"
+          needs_config=false
+          if [[ -z "${bucket}" || -z "${role_to_assume}" || -z "${sse_kms_key_id}" ]]; then
+            needs_config=true
+          fi
+
+          config_s3_uri="${VAR_CONFIG_S3_URI:-${default_config_s3_uri}}"
+          reader_role_arn="${VAR_CONFIG_READER_ROLE_ARN:-${default_reader_role_arn}}"
+          if [[ "${needs_config}" == "true" && ( -z "${reader_role_arn}" || "${reader_role_arn}" == *":::"* ) ]]; then
+            echo "Missing config reader role ARN for Vulcan environment '${config_env}'." >&2
+            exit 1
+          fi
+
+          {
+            echo "config_env=${config_env}"
+            echo "config_s3_uri=${config_s3_uri}"
+            echo "reader_role_arn=${reader_role_arn}"
+            echo "needs_config=${needs_config}"
+            echo "bucket=${bucket}"
+            echo "role_to_assume=${role_to_assume}"
+            echo "sse_kms_key_id=${sse_kms_key_id}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Configure AWS credentials for Vulcan config
+        if: ${{ steps.config-location.outputs.needs_config == 'true' }}
         uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-region: ${{ inputs.aws_region }}
-          role-to-assume: ${{ inputs.role_to_assume || vars.VULCAN_ARTIFACT_PUBLISHER_ROLE_ARN }}
+          role-to-assume: ${{ steps.config-location.outputs.reader_role_arn }}
+          role-session-name: vulcan-config-${{ github.run_id }}
+
+      - name: Resolve Vulcan latest-tag settings
+        id: latest-settings
+        shell: bash
+        env:
+          INPUT_AWS_REGION: ${{ inputs.aws_region }}
+          CONFIG_ENV: ${{ steps.config-location.outputs.config_env }}
+          CONFIG_S3_URI: ${{ steps.config-location.outputs.config_s3_uri }}
+          NEEDS_CONFIG: ${{ steps.config-location.outputs.needs_config }}
+          EXISTING_BUCKET: ${{ steps.config-location.outputs.bucket }}
+          EXISTING_ROLE_TO_ASSUME: ${{ steps.config-location.outputs.role_to_assume }}
+          EXISTING_SSE_KMS_KEY_ID: ${{ steps.config-location.outputs.sse_kms_key_id }}
+        run: |
+          set -euo pipefail
+
+          aws_region="${INPUT_AWS_REGION:-us-west-2}"
+          bucket="${EXISTING_BUCKET}"
+          role_to_assume="${EXISTING_ROLE_TO_ASSUME}"
+          sse_kms_key_id="${EXISTING_SSE_KMS_KEY_ID}"
+
+          if [[ "${NEEDS_CONFIG}" == "true" ]]; then
+            config_file="$(mktemp)"
+            aws s3 cp "${CONFIG_S3_URI}" "${config_file}" --only-show-errors
+            jq -e . "${config_file}" >/dev/null
+
+            config_env="$(jq -r '.environment // empty' "${config_file}")"
+            case "${config_env}:${CONFIG_ENV}" in
+              :*|dev:dev|stg:stg|staging:stg|prod:prod|production:prod)
+                ;;
+              *)
+                echo "Config environment '${config_env}' does not match requested environment '${CONFIG_ENV}'." >&2
+                exit 1
+                ;;
+            esac
+
+            aws_region="${aws_region:-$(jq -r '.aws_region // empty' "${config_file}")}"
+            bucket="${bucket:-$(jq -r '.artifacts.bucket // empty' "${config_file}")}"
+            role_to_assume="${role_to_assume:-$(jq -r '.artifacts.publisher_role_arn // empty' "${config_file}")}"
+            sse_kms_key_id="${sse_kms_key_id:-$(jq -r '.artifacts.kms_key_id // empty' "${config_file}")}"
+          fi
+
+          for required in aws_region bucket role_to_assume; do
+            if [[ -z "${!required:-}" ]]; then
+              echo "Missing required Vulcan latest-tag setting: ${required}" >&2
+              exit 1
+            fi
+          done
+
+          {
+            echo "aws_region=${aws_region}"
+            echo "bucket=${bucket}"
+            echo "role_to_assume=${role_to_assume}"
+            echo "sse_kms_key_id=${sse_kms_key_id}"
+          } >> "${GITHUB_OUTPUT}"
+          {
+            echo "AWS_REGION=${aws_region}"
+            echo "ARTIFACT_BUCKET=${bucket}"
+            echo "SSE_KMS_KEY_ID=${sse_kms_key_id}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ steps.latest-settings.outputs.aws_region }}
+          role-to-assume: ${{ steps.latest-settings.outputs.role_to_assume }}
           role-session-name: vulcan-latest-${{ github.run_id }}
 
       - name: Install aws cli tooling

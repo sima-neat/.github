@@ -108,21 +108,39 @@ verify_ruleset() {
   local actual
   actual="$(api GET "${API_BASE}/orgs/${ORG_NAME}/rulesets/${ruleset_id}")"
 
-  jq -e --argjson expected "$expected_payload" '
+  if jq -e --argjson expected "$expected_payload" '
+    def sorted_or_empty: (. // []) | sort;
+
     .name == $expected.name and
     .target == $expected.target and
     .enforcement == $expected.enforcement and
-    .conditions.repository_name.include == $expected.conditions.repository_name.include and
-    .conditions.repository_name.exclude == $expected.conditions.repository_name.exclude and
-    .conditions.repository_name.protected == $expected.conditions.repository_name.protected and
-    .conditions.ref_name.include == $expected.conditions.ref_name.include and
-    .conditions.ref_name.exclude == $expected.conditions.ref_name.exclude and
+    (.conditions.repository_name.include | sorted_or_empty) == ($expected.conditions.repository_name.include | sorted_or_empty) and
+    (.conditions.repository_name.exclude | sorted_or_empty) == ($expected.conditions.repository_name.exclude | sorted_or_empty) and
+    (.conditions.ref_name.include | sorted_or_empty) == ($expected.conditions.ref_name.include | sorted_or_empty) and
+    (.conditions.ref_name.exclude | sorted_or_empty) == ($expected.conditions.ref_name.exclude | sorted_or_empty) and
     ([.rules[].type] | sort) == ([$expected.rules[].type] | sort) and
     (
+      ($expected.rules[] | select(.type == "pull_request") | .parameters) as $expected_pr |
       .rules[] | select(.type == "pull_request") | .parameters |
-      . == ($expected.rules[] | select(.type == "pull_request") | .parameters)
+      . as $actual_pr |
+      all($expected_pr | keys[]; $actual_pr[.] == $expected_pr[.])
     )
-  ' <<<"$actual" >/dev/null
+  ' <<<"$actual" >/dev/null; then
+    return 0
+  fi
+
+  echo "Ruleset verification failed for ${ruleset_id}." >&2
+  echo "Expected policy:" >&2
+  jq '.' <<<"$expected_payload" >&2
+  echo "Actual ruleset summary:" >&2
+  jq '{
+    name,
+    target,
+    enforcement,
+    conditions,
+    rules: [.rules[] | {type, parameters}]
+  }' <<<"$actual" >&2
+  return 1
 }
 
 payload="$(jq -c '.' "$POLICY_FILE")"

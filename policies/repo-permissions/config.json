@@ -53,6 +53,26 @@
       ],
       "users": []
     },
+    "docs": {
+      "inherit_defaults": true,
+      "teams": [
+        {
+          "slug": "argo",
+          "permission": "maintain"
+        }
+      ],
+      "users": []
+    },
+    "serial": {
+      "inherit_defaults": true,
+      "teams": [
+        {
+          "slug": "argo",
+          "permission": "maintain"
+        }
+      ],
+      "users": []
+    },
     "llima": {
       "inherit_defaults": true,
       "teams": [

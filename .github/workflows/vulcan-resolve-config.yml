@@ -153,6 +153,8 @@ jobs:
           INPUT_VULCAN_ENV: ${{ inputs.vulcan_env }}
           INPUT_CONFIG_S3_URI: ${{ inputs.config_s3_uri }}
           INPUT_CONFIG_READER_ROLE_ARN: ${{ inputs.config_reader_role_arn }}
+          VAR_CONFIG_S3_URI: ${{ vars.VULCAN_CONFIG_S3_URI }}
+          VAR_CONFIG_READER_ROLE_ARN: ${{ vars.VULCAN_CONFIG_READER_ROLE_ARN }}
         run: |
           set -euo pipefail
 
@@ -164,12 +166,12 @@ jobs:
               ;;
             stg|staging)
               env_name="stg"
-              default_config_s3_uri="s3://sima-neat-vulcan-config-stg/_vulcan/github-actions/environment.json"
-              default_reader_role_arn="arn:aws:iam::${{ vars.VULCAN_STG_AWS_ACCOUNT_ID }}:role/NeatStagingVulcanConfigReaderRole"
+              default_config_s3_uri="s3://sima-neat-vulcan-config-staging/_vulcan/github-actions/environment.json"
+              default_reader_role_arn="arn:aws:iam::987569578021:role/NeatStagingVulcanConfigReaderRole"
               ;;
             prod|production)
               env_name="prod"
-              default_config_s3_uri="s3://sima-neat-vulcan-config-prod/_vulcan/github-actions/environment.json"
+              default_config_s3_uri="s3://sima-neat-vulcan-config-production/_vulcan/github-actions/environment.json"
               default_reader_role_arn="arn:aws:iam::${{ vars.VULCAN_PROD_AWS_ACCOUNT_ID }}:role/NeatProductionVulcanConfigReaderRole"
               ;;
             *)
@@ -178,8 +180,8 @@ jobs:
               ;;
           esac
 
-          config_s3_uri="${INPUT_CONFIG_S3_URI:-${default_config_s3_uri}}"
-          reader_role_arn="${INPUT_CONFIG_READER_ROLE_ARN:-${default_reader_role_arn}}"
+          config_s3_uri="${INPUT_CONFIG_S3_URI:-${VAR_CONFIG_S3_URI:-${default_config_s3_uri}}}"
+          reader_role_arn="${INPUT_CONFIG_READER_ROLE_ARN:-${VAR_CONFIG_READER_ROLE_ARN:-${default_reader_role_arn}}}"
 
           if [[ -z "${reader_role_arn}" || "${reader_role_arn}" == *":::"* ]]; then
             echo "Missing config reader role ARN for Vulcan environment '${env_name}'." >&2

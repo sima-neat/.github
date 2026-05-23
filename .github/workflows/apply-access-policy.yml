@@ -1,0 +1,43 @@
+name: Apply Access Policy
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Access policy mode. Report is non-mutating; apply is reserved for the future enforcing sync script.
+        required: true
+        default: report
+        type: choice
+        options:
+          - report
+  pull_request:
+    paths:
+      - "policies/access/**"
+      - "scripts/report-access-policy.py"
+      - ".github/workflows/apply-access-policy.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "policies/access/**"
+      - "scripts/report-access-policy.py"
+      - ".github/workflows/apply-access-policy.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Report access policy
+        run: python3 scripts/report-access-policy.py
+
+      - name: Reject unsupported apply mode
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode != 'report' }}
+        run: |
+          echo "Apply mode is not implemented yet. This workflow currently supports report mode only."
+          exit 1

@@ -6,9 +6,9 @@ if [[ -z "${ORG_NAME:-}" ]]; then
   exit 1
 fi
 
-API_TOKEN="${ORG_ADMIN_TOKEN:-${GITHUB_TOKEN:-}}"
+API_TOKEN="${ORG_ADMIN_TOKEN:-}"
 if [[ -z "${API_TOKEN}" ]]; then
-  echo "Token is required. Set ORG_ADMIN_TOKEN or GITHUB_TOKEN."
+  echo "Token is required. Set ORG_ADMIN_TOKEN."
   exit 1
 fi
 
@@ -120,11 +120,7 @@ verify_ruleset() {
     ([.rules[].type] | sort) == ([$expected.rules[].type] | sort) and
     (
       .rules[] | select(.type == "pull_request") | .parameters |
-      .dismiss_stale_reviews_on_push == true and
-      .require_code_owner_review == false and
-      .require_last_push_approval == false and
-      .required_approving_review_count == 1 and
-      .required_review_thread_resolution == true
+      . == ($expected.rules[] | select(.type == "pull_request") | .parameters)
     )
   ' <<<"$actual" >/dev/null
 }
@@ -171,4 +167,3 @@ rm -f "$rulesets_file"
 
 verify_ruleset "$ruleset_id" "$payload"
 echo "Org ruleset sync complete: ${ruleset_name} (${ruleset_id})"
-

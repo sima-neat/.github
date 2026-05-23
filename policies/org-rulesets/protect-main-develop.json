@@ -1,7 +1,7 @@
 {
-  "name": "Protect main and develop",
+  "name": "Protect main, develop, and release branches",
   "target": "branch",
-  "enforcement": "active",
+  "enforcement": "evaluate",
   "bypass_actors": [],
   "conditions": {
     "repository_name": {
@@ -10,7 +10,7 @@
       "protected": true
     },
     "ref_name": {
-      "include": ["refs/heads/main", "refs/heads/develop"],
+      "include": ["refs/heads/main", "refs/heads/develop", "refs/heads/release-*"],
       "exclude": []
     }
   },
@@ -33,4 +33,3 @@
     }
   ]
 }
-

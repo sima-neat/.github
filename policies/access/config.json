@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "teams": {
+    "admin": {
+      "name": "admin",
+      "description": "Administrators",
+      "privacy": "closed",
+      "org_roles": [
+        "security_manager"
+      ],
+      "repos": {
+        ".github": "maintain",
+        "vulcan": "maintain"
+      }
+    },
+    "dev": {
+      "name": "dev",
+      "description": "Development",
+      "privacy": "closed",
+      "org_roles": [
+        "all_repository_read"
+      ],
+      "repos": {
+        "core": "maintain",
+        "llima": "maintain",
+        "insight": "maintain",
+        "apps": "maintain",
+        "docs": "maintain",
+        "models": "maintain",
+        "playbooks": "maintain"
+      }
+    },
+    "devops": {
+      "name": "devops",
+      "description": "DevOps",
+      "privacy": "closed",
+      "org_roles": [
+        "ci_cd_admin",
+        "apps_manager"
+      ],
+      "repos": {
+        ".github": "maintain",
+        "vulcan": "maintain",
+        "core": "maintain",
+        "internals": "maintain",
+        "sima-cli": "maintain",
+        "docs": "maintain",
+        "insight": "maintain"
+      }
+    },
+    "platform": {
+      "name": "platform",
+      "description": "Platform Development",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "core": "maintain",
+        "internals": "maintain",
+        "sdk": "maintain",
+        "model-sdk": "maintain",
+        "llima": "maintain",
+        "models": "maintain"
+      }
+    },
+    "release": {
+      "name": "release",
+      "description": "Release",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "core": "maintain",
+        "internals": "maintain",
+        "llima": "maintain",
+        "sima-cli": "maintain",
+        "insight": "maintain",
+        "apps": "maintain",
+        "docs": "maintain",
+        "sdk": "maintain",
+        "model-sdk": "maintain"
+      }
+    },
+    "ae": {
+      "name": "ae",
+      "description": "Application Engineering",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "sima-cli": "maintain",
+        "apps": "maintain",
+        "docs": "maintain"
+      }
+    }
+  },
+  "legacy_teams": {
+    "argo": {
+      "status": "transition",
+      "preserve": true,
+      "reason": "Existing broad maintainer team; migrate members and repo grants into the new team model before removal."
+    },
+    "alpha": {
+      "status": "transition",
+      "preserve": true,
+      "reason": "Existing early-access/development team; preserve until replacement access is confirmed."
+    }
+  },
+  "direct_assignments": {
+    "allowed": false,
+    "exceptions": {
+      ".github": [
+        {
+          "username": "shanguangzai",
+          "permission": "admin",
+          "reason": "Temporary org policy bootstrap access.",
+          "expires": "2026-06-30"
+        }
+      ],
+      "docs": [
+        {
+          "username": "dotimothy",
+          "permission": "admin",
+          "reason": "Temporary docs bootstrap access while team model is migrated.",
+          "expires": "2026-06-30"
+        }
+      ],
+      "internals": [
+        {
+          "username": "manuel-roldan",
+          "permission": "admin",
+          "reason": "Temporary internals owner exception.",
+          "expires": "2026-06-30"
+        }
+      ],
+      "models": [
+        {
+          "username": "Onat-Inak",
+          "permission": "admin",
+          "reason": "Temporary models owner exception.",
+          "expires": "2026-06-30"
+        },
+        {
+          "username": "shanguangzai",
+          "permission": "admin",
+          "reason": "Temporary models owner exception.",
+          "expires": "2026-06-30"
+        }
+      ]
+    }
+  },
+  "prune_unmanaged": {
+    "teams": false,
+    "users": false
+  }
+}
+

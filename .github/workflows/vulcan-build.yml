@@ -112,6 +112,8 @@ jobs:
           find "${VULCAN_WORKSPACE}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
           tar -C "${GITHUB_WORKSPACE}" --exclude .git -cf - . | tar -C "${VULCAN_WORKSPACE}" -xf -
           test -f "${VULCAN_WORKSPACE}/README.md"
+          find "${GITHUB_WORKSPACE}" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          df -h
 
       - name: Inspect Vulcan runner
         shell: bash

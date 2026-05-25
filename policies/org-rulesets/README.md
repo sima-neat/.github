@@ -1,6 +1,8 @@
 # Org Rulesets Policy
 
-Use this directory to define organization-wide GitHub rulesets.
+Use this directory to define organization-wide GitHub rulesets. Each `*.json`
+file is applied independently by ruleset `name`, so branch-specific behavior
+should be split into separate files when the rules differ.
 
 The sync script creates or updates rulesets by `name`. Tokens must have
 organization administration write permission. Use a dedicated `ORG_ADMIN_TOKEN`
@@ -9,3 +11,9 @@ fall back to a generic GitHub token.
 
 Branch protection rulesets should start in `evaluate` mode for initial rollout.
 After rule insights show the expected impact, change `enforcement` to `active`.
+
+The current merge method policy is:
+
+- `develop`: squash merge only
+- `main`: merge commit only
+- `release-*`: protected by the shared review/deletion/non-fast-forward ruleset

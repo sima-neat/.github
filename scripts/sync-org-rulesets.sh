@@ -12,13 +12,19 @@ if [[ -z "${API_TOKEN}" ]]; then
   exit 1
 fi
 
-POLICY_FILE="${POLICY_FILE:-policies/org-rulesets/protect-main-develop.json}"
+POLICY_DIR="${POLICY_DIR:-policies/org-rulesets}"
+POLICY_FILE="${POLICY_FILE:-}"
 API_BASE="https://api.github.com"
 API_VERSION="2022-11-28"
 PER_PAGE=100
 
-if [[ ! -f "${POLICY_FILE}" ]]; then
+if [[ -n "${POLICY_FILE}" && ! -f "${POLICY_FILE}" ]]; then
   echo "Policy file not found: ${POLICY_FILE}"
+  exit 1
+fi
+
+if [[ -z "${POLICY_FILE}" && ! -d "${POLICY_DIR}" ]]; then
+  echo "Policy directory not found: ${POLICY_DIR}"
   exit 1
 fi
 
@@ -143,45 +149,68 @@ verify_ruleset() {
   return 1
 }
 
-payload="$(jq -c '.' "$POLICY_FILE")"
-ruleset_name="$(jq -r '.name // empty' "$POLICY_FILE")"
-if [[ -z "$ruleset_name" ]]; then
-  echo "Policy file must define .name"
-  exit 1
-fi
+sync_ruleset_file() {
+  local policy_file="$1"
+  local payload ruleset_name rulesets_file match_count ruleset_id
 
-rulesets_file="$(mktemp)"
-if ! list_rulesets >"$rulesets_file"; then
-  rm -f "$rulesets_file"
-  exit 1
-fi
+  payload="$(jq -c '.' "$policy_file")"
+  ruleset_name="$(jq -r '.name // empty' "$policy_file")"
+  if [[ -z "$ruleset_name" ]]; then
+    echo "Policy file must define .name: ${policy_file}"
+    exit 1
+  fi
 
-match_count="$(
-  jq -s --arg name "$ruleset_name" \
-    '[.[] | select(.name == $name and .target == "branch")] | length' \
-    "$rulesets_file"
-)"
+  rulesets_file="$(mktemp)"
+  if ! list_rulesets >"$rulesets_file"; then
+    rm -f "$rulesets_file"
+    exit 1
+  fi
 
-if (( match_count > 1 )); then
-  echo "Found ${match_count} branch rulesets named '${ruleset_name}'. Refusing to choose one."
-  rm -f "$rulesets_file"
-  exit 1
-fi
-
-if (( match_count == 0 )); then
-  echo "Creating org ruleset: ${ruleset_name}"
-  ruleset_id="$(api POST "${API_BASE}/orgs/${ORG_NAME}/rulesets" "$payload" | jq -r '.id')"
-else
-  ruleset_id="$(
-    jq -r --arg name "$ruleset_name" \
-      'select(.name == $name and .target == "branch") | .id' \
+  match_count="$(
+    jq -s --arg name "$ruleset_name" \
+      '[.[] | select(.name == $name and .target == "branch")] | length' \
       "$rulesets_file"
   )"
-  echo "Updating org ruleset: ${ruleset_name} (${ruleset_id})"
-  api PUT "${API_BASE}/orgs/${ORG_NAME}/rulesets/${ruleset_id}" "$payload" >/dev/null
+
+  if (( match_count > 1 )); then
+    echo "Found ${match_count} branch rulesets named '${ruleset_name}'. Refusing to choose one."
+    rm -f "$rulesets_file"
+    exit 1
+  fi
+
+  if (( match_count == 0 )); then
+    echo "Creating org ruleset: ${ruleset_name}"
+    ruleset_id="$(api POST "${API_BASE}/orgs/${ORG_NAME}/rulesets" "$payload" | jq -r '.id')"
+  else
+    ruleset_id="$(
+      jq -r --arg name "$ruleset_name" \
+        'select(.name == $name and .target == "branch") | .id' \
+        "$rulesets_file"
+    )"
+    echo "Updating org ruleset: ${ruleset_name} (${ruleset_id})"
+    api PUT "${API_BASE}/orgs/${ORG_NAME}/rulesets/${ruleset_id}" "$payload" >/dev/null
+  fi
+
+  rm -f "$rulesets_file"
+
+  verify_ruleset "$ruleset_id" "$payload"
+  echo "Org ruleset sync complete: ${ruleset_name} (${ruleset_id})"
+}
+
+if [[ -n "${POLICY_FILE}" ]]; then
+  sync_ruleset_file "$POLICY_FILE"
+else
+  policy_files=()
+  while IFS= read -r policy_file; do
+    policy_files+=("$policy_file")
+  done < <(find "${POLICY_DIR}" -maxdepth 1 -type f -name '*.json' | sort)
+
+  if [[ "${#policy_files[@]}" -eq 0 ]]; then
+    echo "No ruleset policy files found in ${POLICY_DIR}"
+    exit 1
+  fi
+
+  for policy_file in "${policy_files[@]}"; do
+    sync_ruleset_file "$policy_file"
+  done
 fi
-
-rm -f "$rulesets_file"
-
-verify_ruleset "$ruleset_id" "$payload"
-echo "Org ruleset sync complete: ${ruleset_name} (${ruleset_id})"

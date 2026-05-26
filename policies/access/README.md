@@ -63,7 +63,7 @@ Current intended assignments:
 
 | Team | Organization Roles |
 |---|---|
-| `admin` | `security_manager` |
+| `admin` | `all_repository_admin`, `security_manager` |
 | `dev` | `all_repository_read` |
 | `devops` | `ci_cd_admin`, `apps_manager` |
 | `platform` | none |
@@ -72,6 +72,11 @@ Current intended assignments:
 
 Avoid all-repository write, maintain, or admin unless there is a specific
 reviewed need. Prefer repo-specific grants.
+
+The `admin` team is the explicit exception: it has `all_repository_admin` so
+administrators can manage every current and future repository without keeping a
+manual repo list in this policy. It also has `security_manager` for
+organization-level security policy, alert, and configuration administration.
 
 ## Repository Permissions
 
@@ -87,6 +92,9 @@ Supported permissions:
 
 Prefer `maintain` for repo stewardship and `push` for code contribution without
 repo settings control.
+
+Use `repos` for repo-specific access. Use `org_roles` for access that is meant
+to apply across the organization.
 
 The current model intentionally limits `ae` maintain access to:
 

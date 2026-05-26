@@ -6,12 +6,10 @@
       "description": "Administrators",
       "privacy": "closed",
       "org_roles": [
+        "all_repository_admin",
         "security_manager"
       ],
-      "repos": {
-        ".github": "maintain",
-        "vulcan": "maintain"
-      }
+      "repos": {}
     },
     "dev": {
       "name": "dev",

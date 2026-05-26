@@ -101,13 +101,30 @@
         ".github": "write"
       }
     },
+    "owners-docs": {
+      "name": "owners-docs",
+      "description": "Required code owners for docs",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "docs": "maintain"
+      }
+    },
+    "watchers-docs": {
+      "name": "watchers-docs",
+      "description": "Visibility-only reviewers for docs",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "docs": "write"
+      }
+    },
     "owners-default": {
       "name": "owners-default",
       "description": "Default required code owners",
       "privacy": "closed",
       "org_roles": [],
       "repos": {
-        "docs": "maintain",
         "internals": "maintain",
         "kerrigan": "maintain",
         "mixR": "maintain",
@@ -127,7 +144,6 @@
       "privacy": "closed",
       "org_roles": [],
       "repos": {
-        "docs": "write",
         "internals": "write",
         "kerrigan": "write",
         "mixR": "write",

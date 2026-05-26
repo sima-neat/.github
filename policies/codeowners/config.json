@@ -43,6 +43,12 @@
         "watchers-core"
       ]
     },
+    "docs": {
+      "owner_team": "owners-docs",
+      "watcher_teams": [
+        "watchers-docs"
+      ]
+    },
     "insight": {
       "owner_team": "owners-insight",
       "watcher_teams": [

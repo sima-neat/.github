@@ -69,6 +69,7 @@ Current repo-specific ownership exists for:
 - `.github`
 - `apps`
 - `core`
+- `docs`
 - `insight`
 - `llima`
 

@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "organization": "sima-neat",
+  "target_repositories": [
+    ".github",
+    "apps",
+    "core",
+    "docs",
+    "insight",
+    "internals",
+    "kerrigan",
+    "llima",
+    "mixR",
+    "model-sdk",
+    "models",
+    "playbooks",
+    "sdk",
+    "serial",
+    "sima-cli",
+    "vscode-template",
+    "vulcan"
+  ],
+  "default_owner_team": "owners-default",
+  "default_watcher_teams": [
+    "watchers-default"
+  ],
+  "repositories": {
+    ".github": {
+      "owner_team": "owners-github",
+      "watcher_teams": [
+        "watchers-github"
+      ]
+    },
+    "apps": {
+      "owner_team": "owners-apps",
+      "watcher_teams": [
+        "watchers-apps"
+      ]
+    },
+    "core": {
+      "owner_team": "owners-core",
+      "watcher_teams": [
+        "watchers-core"
+      ]
+    },
+    "insight": {
+      "owner_team": "owners-insight",
+      "watcher_teams": [
+        "watchers-insight"
+      ]
+    },
+    "llima": {
+      "owner_team": "owners-llima",
+      "watcher_teams": [
+        "watchers-llima"
+      ]
+    }
+  }
+}

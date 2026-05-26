@@ -11,6 +11,136 @@
       ],
       "repos": {}
     },
+    "owners-apps": {
+      "name": "owners-apps",
+      "description": "Required code owners for apps",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "apps": "maintain"
+      }
+    },
+    "watchers-apps": {
+      "name": "watchers-apps",
+      "description": "Visibility-only reviewers for apps",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "apps": "write"
+      }
+    },
+    "owners-insight": {
+      "name": "owners-insight",
+      "description": "Required code owners for insight",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "insight": "maintain"
+      }
+    },
+    "watchers-insight": {
+      "name": "watchers-insight",
+      "description": "Visibility-only reviewers for insight",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "insight": "write"
+      }
+    },
+    "owners-llima": {
+      "name": "owners-llima",
+      "description": "Required code owners for llima",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "llima": "maintain"
+      }
+    },
+    "watchers-llima": {
+      "name": "watchers-llima",
+      "description": "Visibility-only reviewers for llima",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "llima": "write"
+      }
+    },
+    "owners-core": {
+      "name": "owners-core",
+      "description": "Required code owners for core",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "core": "maintain"
+      }
+    },
+    "watchers-core": {
+      "name": "watchers-core",
+      "description": "Visibility-only reviewers for core",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "core": "write"
+      }
+    },
+    "owners-github": {
+      "name": "owners-github",
+      "description": "Required code owners for .github",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        ".github": "maintain"
+      }
+    },
+    "watchers-github": {
+      "name": "watchers-github",
+      "description": "Visibility-only reviewers for .github",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        ".github": "write"
+      }
+    },
+    "owners-default": {
+      "name": "owners-default",
+      "description": "Default required code owners",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "docs": "maintain",
+        "internals": "maintain",
+        "kerrigan": "maintain",
+        "mixR": "maintain",
+        "model-sdk": "maintain",
+        "models": "maintain",
+        "playbooks": "maintain",
+        "sdk": "maintain",
+        "serial": "maintain",
+        "sima-cli": "maintain",
+        "vscode-template": "maintain",
+        "vulcan": "maintain"
+      }
+    },
+    "watchers-default": {
+      "name": "watchers-default",
+      "description": "Default visibility-only reviewers",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "docs": "write",
+        "internals": "write",
+        "kerrigan": "write",
+        "mixR": "write",
+        "model-sdk": "write",
+        "models": "write",
+        "playbooks": "write",
+        "sdk": "write",
+        "serial": "write",
+        "sima-cli": "write",
+        "vscode-template": "write",
+        "vulcan": "write"
+      }
+    },
     "dev": {
       "name": "dev",
       "description": "Development",

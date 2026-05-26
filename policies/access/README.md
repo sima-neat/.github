@@ -96,6 +96,22 @@ repo settings control.
 Use `repos` for repo-specific access. Use `org_roles` for access that is meant
 to apply across the organization.
 
+## Code Owner and Watcher Teams
+
+Code owner and watcher teams are regular managed teams. Define them here before
+referencing them from `policies/codeowners/config.json`.
+
+Owner teams use the `owners-<repo>` naming pattern and receive `maintain` on
+the repositories they own. They are the only teams that should appear in
+generated CODEOWNERS files.
+
+Watcher teams use the `watchers-<repo>` naming pattern and receive `write` on
+the repositories they watch. They are requested for visibility only and must not
+appear in generated CODEOWNERS files.
+
+Repos without a dedicated owner or watcher team use `owners-default` and
+`watchers-default`.
+
 The current model intentionally limits `ae` maintain access to:
 
 - `sima-cli`

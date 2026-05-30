@@ -128,17 +128,17 @@ jobs:
             dev)
               config_env="dev"
               default_config_s3_uri="s3://sima-neat-vulcan-config-dev/_vulcan/github-actions/environment.json"
-              default_reader_role_arn="arn:aws:iam::990858070801:role/NeatDevVulcanConfigReaderRole"
+              default_reader_role_arn="arn:aws:iam::${{ vars.VULCAN_DEV_AWS_ACCOUNT_ID }}:role/NeatDevVulcanConfigReaderRole"
               ;;
             stg|staging)
               config_env="stg"
               default_config_s3_uri="s3://sima-neat-vulcan-config-staging/_vulcan/github-actions/environment.json"
-              default_reader_role_arn="arn:aws:iam::987569578021:role/NeatStagingVulcanConfigReaderRole"
+              default_reader_role_arn="arn:aws:iam::${{ vars.VULCAN_STAGING_AWS_ACCOUNT_ID }}:role/NeatStagingVulcanConfigReaderRole"
               ;;
             prod|production)
               config_env="prod"
               default_config_s3_uri="s3://sima-neat-vulcan-config-production/_vulcan/github-actions/environment.json"
-              default_reader_role_arn="arn:aws:iam::${{ vars.VULCAN_PROD_AWS_ACCOUNT_ID }}:role/NeatProductionVulcanConfigReaderRole"
+              default_reader_role_arn="arn:aws:iam::${{ vars.VULCAN_PRODUCTION_AWS_ACCOUNT_ID }}:role/NeatProductionVulcanConfigReaderRole"
               ;;
             *)
               echo "Unsupported Vulcan environment: ${env_name}" >&2

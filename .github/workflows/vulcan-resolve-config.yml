@@ -34,6 +34,9 @@ on:
       sdk_cache:
         description: Default SDK cache label.
         value: ${{ jobs.resolve.outputs.sdk_cache }}
+      sdk_channel:
+        description: SDK channel resolved from deps/manifest.json, when present.
+        value: ${{ jobs.resolve.outputs.sdk_channel }}
       capacity:
         description: Default capacity label.
         value: ${{ jobs.resolve.outputs.capacity }}
@@ -122,6 +125,7 @@ jobs:
       config_reader_role_arn: ${{ steps.config.outputs.config_reader_role_arn }}
       aws_region: ${{ steps.config.outputs.aws_region }}
       sdk_cache: ${{ steps.config.outputs.sdk_cache }}
+      sdk_channel: ${{ steps.config.outputs.sdk_channel }}
       capacity: ${{ steps.config.outputs.capacity }}
       docs_capacity: ${{ steps.config.outputs.docs_capacity }}
       sysdoc_capacity: ${{ steps.config.outputs.sysdoc_capacity }}
@@ -194,6 +198,49 @@ jobs:
             echo "config_reader_role_arn=${reader_role_arn}"
           } >> "${GITHUB_OUTPUT}"
 
+      - name: Checkout dependency manifest
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Resolve SDK manifest
+        id: sdk_manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sdk_channel=""
+          if [[ -f deps/manifest.json ]]; then
+            jq -e . deps/manifest.json >/dev/null
+            sdk_channel="$(jq -r '
+              if (.sdk // null) == null then
+                ""
+              elif (.sdk | type) == "object" then
+                (.sdk.channel // "")
+              else
+                .sdk
+              end
+            ' deps/manifest.json)"
+            sdk_channel="$(echo "${sdk_channel}" | tr '[:upper:]' '[:lower:]' | xargs)"
+
+            case "${sdk_channel}" in
+              ""|main|develop)
+                ;;
+              [0-9]*)
+                if [[ ! "${sdk_channel}" =~ ^[0-9][0-9a-z._-]*$ ]]; then
+                  echo "Unsupported SDK channel '${sdk_channel}' in deps/manifest.json. Use main, develop, or a version such as 2.0.0." >&2
+                  exit 1
+                fi
+                ;;
+              *)
+                echo "Unsupported SDK channel '${sdk_channel}' in deps/manifest.json. Use main, develop, or a version such as 2.0.0." >&2
+                exit 1
+                ;;
+            esac
+          fi
+
+          printf 'sdk_channel=%s\n' "${sdk_channel}" >> "${GITHUB_OUTPUT}"
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -208,6 +255,7 @@ jobs:
           INPUT_VULCAN_ENV: ${{ steps.location.outputs.vulcan_env }}
           INPUT_CONFIG_S3_URI: ${{ steps.location.outputs.config_s3_uri }}
           INPUT_CONFIG_READER_ROLE_ARN: ${{ steps.location.outputs.config_reader_role_arn }}
+          INPUT_SDK_CHANNEL: ${{ steps.sdk_manifest.outputs.sdk_channel }}
         run: |
           set -euo pipefail
 
@@ -239,12 +287,35 @@ jobs:
             printf '%s=%s\n' "${name}" "${value}" >> "${GITHUB_OUTPUT}"
           }
 
+          default_sdk_cache="$(jq -er '.runner.default_sdk_cache // empty' "${config_file}" 2>/dev/null || true)"
+          if [[ -z "${default_sdk_cache}" ]]; then
+            default_sdk_cache="sdk-latest"
+          fi
+
+          sdk_channel=""
+          sdk_cache="${default_sdk_cache}"
+          sdk_channel="${INPUT_SDK_CHANNEL}"
+          case "${sdk_channel}" in
+            "")
+              ;;
+            main)
+              sdk_cache="sdk-latest"
+              ;;
+            develop)
+              sdk_cache="sdk-develop"
+              ;;
+            *)
+              sdk_cache="sdk-${sdk_channel}"
+              ;;
+          esac
+
           # shellcheck disable=SC2129
           printf 'vulcan_env=%s\n' "${env_name}" >> "${GITHUB_OUTPUT}"
           printf 'config_s3_uri=%s\n' "${config_s3_uri}" >> "${GITHUB_OUTPUT}"
           printf 'config_reader_role_arn=%s\n' "${INPUT_CONFIG_READER_ROLE_ARN}" >> "${GITHUB_OUTPUT}"
           emit aws_region '.aws_region' us-west-2
-          emit sdk_cache '.runner.default_sdk_cache' sdk-latest
+          printf 'sdk_cache=%s\n' "${sdk_cache}" >> "${GITHUB_OUTPUT}"
+          printf 'sdk_channel=%s\n' "${sdk_channel}" >> "${GITHUB_OUTPUT}"
           emit capacity '.runner.default_capacity' default
           emit docs_capacity '.runner.docs_capacity' cheap
           emit sysdoc_capacity '.runner.sysdoc_capacity' cheap

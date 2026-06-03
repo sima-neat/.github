@@ -1,0 +1,101 @@
+name: Vulcan Resolve Modalix Runner
+
+on:
+  workflow_call:
+    inputs:
+      manifest_path:
+        description: Path to the dependency manifest in the caller repository.
+        required: false
+        default: deps/manifest.json
+        type: string
+      legacy_platform_version:
+        description: Platform version that uses the legacy Modalix runner group.
+        required: false
+        default: 2.0.0
+        type: string
+      legacy_runner_group:
+        description: Runner group used for the legacy platform version.
+        required: false
+        default: modalix-devkit
+        type: string
+      versioned_runner_group_prefix:
+        description: Prefix for versioned Modalix runner groups.
+        required: false
+        default: modalix-devkit-
+        type: string
+    outputs:
+      platform_version:
+        description: Platform version read from the dependency manifest.
+        value: ${{ jobs.resolve.outputs.platform_version }}
+      modalix_runner_group:
+        description: Modalix runner group resolved from the platform version.
+        value: ${{ jobs.resolve.outputs.modalix_runner_group }}
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  resolve:
+    name: Resolve Modalix runner
+    runs-on: ubuntu-latest
+    outputs:
+      platform_version: ${{ steps.runner.outputs.platform_version }}
+      modalix_runner_group: ${{ steps.runner.outputs.modalix_runner_group }}
+    steps:
+      - name: Checkout dependency manifest
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Resolve Modalix runner group
+        id: runner
+        shell: bash
+        env:
+          MANIFEST_PATH: ${{ inputs.manifest_path }}
+          LEGACY_PLATFORM_VERSION: ${{ inputs.legacy_platform_version }}
+          LEGACY_RUNNER_GROUP: ${{ inputs.legacy_runner_group }}
+          VERSIONED_RUNNER_GROUP_PREFIX: ${{ inputs.versioned_runner_group_prefix }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          manifest_path = Path(os.environ["MANIFEST_PATH"])
+          legacy_platform_version = os.environ["LEGACY_PLATFORM_VERSION"].strip()
+          legacy_runner_group = os.environ["LEGACY_RUNNER_GROUP"].strip()
+          versioned_runner_group_prefix = os.environ["VERSIONED_RUNNER_GROUP_PREFIX"].strip()
+
+          if not manifest_path.is_file():
+              raise SystemExit(f"Dependency manifest not found: {manifest_path}")
+          if not legacy_platform_version:
+              raise SystemExit("legacy_platform_version must not be empty")
+          if not legacy_runner_group:
+              raise SystemExit("legacy_runner_group must not be empty")
+          if not versioned_runner_group_prefix:
+              raise SystemExit("versioned_runner_group_prefix must not be empty")
+
+          data = json.loads(manifest_path.read_text())
+          platform_version = str(data.get("platform-version", "")).strip()
+          if not platform_version:
+              raise SystemExit(f"Missing or empty platform-version in {manifest_path}")
+          if not re.fullmatch(r"[0-9][0-9A-Za-z._+-]*", platform_version):
+              raise SystemExit(f"Unsupported platform-version for runner group: {platform_version!r}")
+
+          runner_group = (
+              legacy_runner_group
+              if platform_version == legacy_platform_version
+              else f"{versioned_runner_group_prefix}{platform_version}"
+          )
+          print(f"platform_version={platform_version}")
+          print(f"modalix_runner_group={runner_group}")
+          PY
+
+          echo "Resolved platform version: $(grep '^platform_version=' "${GITHUB_OUTPUT}" | tail -n1 | cut -d= -f2-)"
+          echo "Resolved Modalix runner group: $(grep '^modalix_runner_group=' "${GITHUB_OUTPUT}" | tail -n1 | cut -d= -f2-)"

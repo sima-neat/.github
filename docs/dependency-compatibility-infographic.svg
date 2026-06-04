@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1400" viewBox="0 0 1000 1400" role="img" aria-labelledby="title desc">
+  <title id="title">Neat Dependency And Compatibility Management</title>
+  <desc id="desc">Infographic summarizing manifest ownership, repository dependency flow, snap fallback behavior, and package version precedence.</desc>
+  <defs>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#059669"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0f172a" flood-opacity="0.13"/>
+    </filter>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 34px Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 17px Arial, sans-serif; fill: #475569; }
+      .section-title { font: 700 22px Arial, sans-serif; fill: #0f172a; }
+      .body { font: 400 16px Arial, sans-serif; fill: #334155; }
+      .small { font: 400 14px Arial, sans-serif; fill: #475569; }
+      .code { font: 600 15px Arial, sans-serif; fill: #1e293b; }
+      .label { font: 700 17px Arial, sans-serif; fill: #0f172a; }
+      .card { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.2; rx: 14; filter: url(#shadow); }
+      .node { fill: #eff6ff; stroke: #2563eb; stroke-width: 2; rx: 10; }
+      .green { fill: #ecfdf5; stroke: #059669; stroke-width: 2; rx: 10; }
+      .amber { fill: #fffbeb; stroke: #d97706; stroke-width: 2; rx: 10; }
+      .gray { fill: #f1f5f9; stroke: #cbd5e1; stroke-width: 1.2; rx: 10; }
+      .pill-blue { fill: #dbeafe; stroke: #93c5fd; stroke-width: 1.2; rx: 18; }
+      .pill-green { fill: #d1fae5; stroke: #6ee7b7; stroke-width: 1.2; rx: 18; }
+      .pill-amber { fill: #fef3c7; stroke: #fbbf24; stroke-width: 1.2; rx: 18; }
+      .arrow-blue { stroke: #2563eb; stroke-width: 3; fill: none; marker-end: url(#arrow-blue); }
+      .arrow-green { stroke: #059669; stroke-width: 3; fill: none; marker-end: url(#arrow-green); }
+      .dash { stroke-dasharray: 8 7; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1000" height="1400"/>
+
+  <text x="60" y="58" class="title">Neat Dependency And Compatibility Management</text>
+  <text x="60" y="88" class="subtitle">
+    <tspan x="60" dy="0">Manifest-first dependency intent, platform compatibility, Vulcan resolution,</tspan>
+    <tspan x="60" dy="22">and release version precedence.</tspan>
+  </text>
+
+  <rect x="60" y="150" width="880" height="245" class="card"/>
+  <text x="95" y="190" class="section-title">1. Dependency Direction</text>
+  <text x="95" y="220" class="body">Keep the graph acyclic. Core consumes both Internals and LLiMa directly.</text>
+
+  <rect x="105" y="260" width="170" height="50" class="amber"/>
+  <text x="190" y="291" text-anchor="middle" class="label">SDK / Platform</text>
+  <rect x="340" y="260" width="150" height="50" class="node"/>
+  <text x="415" y="291" text-anchor="middle" class="label">internals</text>
+  <rect x="575" y="230" width="140" height="50" class="node"/>
+  <text x="645" y="261" text-anchor="middle" class="label">llima</text>
+  <rect x="575" y="315" width="140" height="50" class="node"/>
+  <text x="645" y="346" text-anchor="middle" class="label">core</text>
+  <rect x="765" y="315" width="125" height="50" class="green"/>
+  <text x="827.5" y="346" text-anchor="middle" class="label">apps</text>
+
+  <path d="M275 285 L337 285" class="arrow-blue"/>
+  <path d="M490 285 C530 282 545 260 572 255" class="arrow-blue"/>
+  <path d="M645 280 L645 312" class="arrow-blue"/>
+  <path d="M490 300 C530 315 545 335 572 340" class="arrow-blue"/>
+  <path d="M715 340 L762 340" class="arrow-green"/>
+
+  <rect x="60" y="425" width="880" height="310" class="card"/>
+  <text x="95" y="465" class="section-title">2. Manifest Contract</text>
+  <text x="95" y="495" class="body">Build scripts and workflows read dependency intent from <tspan class="code">deps/manifest.json</tspan>.</text>
+
+  <rect x="100" y="535" width="230" height="42" class="pill-blue"/>
+  <text x="215" y="561" text-anchor="middle" class="code">platform-version</text>
+  <text x="355" y="550" class="body">
+    <tspan x="355" dy="0">Platform software and ABI compatibility line.</tspan>
+    <tspan x="355" dy="21">This should match the SDK/platform line.</tspan>
+  </text>
+
+  <rect x="100" y="598" width="230" height="42" class="pill-green"/>
+  <text x="215" y="624" text-anchor="middle" class="code">package-version</text>
+  <text x="355" y="613" class="body">
+    <tspan x="355" dy="0">Base package identity for Neat package repos.</tspan>
+    <tspan x="355" dy="21">Independent from SDK version.</tspan>
+  </text>
+
+  <rect x="100" y="661" width="230" height="42" class="pill-amber"/>
+  <text x="215" y="687" text-anchor="middle" class="code">policy: snap</text>
+  <text x="355" y="676" class="body">
+    <tspan x="355" dy="0">Branch-coordinated latest dependency.</tspan>
+    <tspan x="355" dy="21">Used by library/package dependencies.</tspan>
+  </text>
+
+  <rect x="60" y="765" width="880" height="295" class="card"/>
+  <text x="95" y="805" class="section-title">3. Snap Fallback</text>
+  <text x="95" y="835" class="body">
+    <tspan x="95" dy="0">Snap lets stacked branches build without committing concrete dependency</tspan>
+    <tspan x="95" dy="21">versions into the manifest.</tspan>
+  </text>
+
+  <rect x="115" y="885" width="175" height="48" class="node"/>
+  <text x="202.5" y="915" text-anchor="middle" class="label">current branch</text>
+  <rect x="395" y="885" width="205" height="48" class="node"/>
+  <text x="497.5" y="915" text-anchor="middle" class="code">dep@branch:latest</text>
+  <rect x="395" y="970" width="205" height="48" class="green"/>
+  <text x="497.5" y="1000" text-anchor="middle" class="code">dep@develop:latest</text>
+  <rect x="695" y="970" width="170" height="48" class="amber"/>
+  <text x="780" y="992" text-anchor="middle" class="label">explicit pin</text>
+  <text x="780" y="1011" text-anchor="middle" class="small">no fallback</text>
+
+  <path d="M290 909 L392 909" class="arrow-blue"/>
+  <path d="M497 933 L497 967" class="arrow-green dash"/>
+  <text x="95" y="1030" class="small">
+    <tspan x="95" dy="0">If branch latest is missing and snap policy is enabled, retry develop latest.</tspan>
+    <tspan x="95" dy="20">Explicit pins do not fall back; missing artifacts fail the build.</tspan>
+  </text>
+
+  <rect x="60" y="1090" width="880" height="220" class="card"/>
+  <text x="95" y="1130" class="section-title">4. Package Version Precedence</text>
+  <text x="95" y="1160" class="body">For internals, llima, and core, exact tag builds intentionally override the manifest.</text>
+
+  <rect x="105" y="1195" width="180" height="48" class="amber"/>
+  <text x="195" y="1216" text-anchor="middle" class="label">Exact tag</text>
+  <text x="195" y="1235" text-anchor="middle" class="code">v0.2.0 -> 0.2.0</text>
+
+  <rect x="385" y="1195" width="180" height="48" class="node"/>
+  <text x="475" y="1216" text-anchor="middle" class="label">Manifest</text>
+  <text x="475" y="1235" text-anchor="middle" class="code">package-version</text>
+
+  <rect x="665" y="1195" width="180" height="48" class="green"/>
+  <text x="755" y="1216" text-anchor="middle" class="label">Branch build</text>
+  <text x="755" y="1235" text-anchor="middle" class="code">+branch.sha</text>
+
+  <path d="M285 1219 L382 1219" class="arrow-blue"/>
+  <path d="M565 1219 L662 1219" class="arrow-green"/>
+
+  <text x="105" y="1282" class="small">
+    <tspan x="105" dy="0">Tag wins; leading v is stripped. Non-tag builds read package-version from manifest.</tspan>
+    <tspan x="105" dy="20">Branch builds append metadata, for example: 0.1.0+feature-xyz.abcdef1.</tspan>
+  </text>
+
+  <rect x="60" y="1340" width="880" height="34" class="gray"/>
+  <text x="500" y="1362" text-anchor="middle" class="small">
+    SDK version follows platform software; Neat package versions stay independent.
+  </text>
+</svg>

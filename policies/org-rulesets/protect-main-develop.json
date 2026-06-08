@@ -10,7 +10,7 @@
       "protected": true
     },
     "ref_name": {
-      "include": ["refs/heads/main", "refs/heads/develop", "refs/heads/release-*"],
+      "include": ["refs/heads/main", "refs/heads/develop", "refs/heads/release-*", "refs/heads/v[0-9]*.[0-9]*.[0-9]*"],
       "exclude": []
     }
   },

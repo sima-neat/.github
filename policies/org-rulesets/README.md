@@ -16,4 +16,4 @@ The current merge method policy is:
 
 - `develop`: squash merge only
 - `main`: merge commit only
-- `release-*`: protected by the shared review/deletion/non-fast-forward ruleset
+- `release-*` and `v[0-9]*.[0-9]*.[0-9]*`: protected by the shared review/deletion/non-fast-forward ruleset

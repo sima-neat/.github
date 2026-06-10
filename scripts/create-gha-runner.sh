@@ -147,12 +147,82 @@ prompt_yes_no() {
 
 api_post() {
   local url="$1"
-  curl -fsSL \
+  local body_file
+  local http_code
+
+  body_file="$(mktemp)"
+  http_code="$(curl -sS \
+    -o "$body_file" \
+    -w "%{http_code}" \
     -X POST \
     -H "Accept: application/vnd.github+json" \
     -H "Authorization: Bearer ${API_TOKEN}" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
+    "$url" || true)"
+
+  if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
+    echo "GitHub API request failed: POST $url" >&2
+    echo "HTTP status: $http_code" >&2
+    if [[ -s "$body_file" ]]; then
+      jq -r '.message // empty' "$body_file" 2>/dev/null | sed 's/^/GitHub message: /' >&2 || true
+      cat "$body_file" >&2
+    fi
+    rm -f "$body_file"
+    echo >&2
+    echo "Check that ORG_ADMIN_TOKEN is valid and has permission to manage Actions runners for this organization or repository." >&2
+    echo "Classic PATs usually need admin:org for org runners, or repo/admin access for repo runners." >&2
+    exit 1
+  fi
+
+  cat "$body_file"
+  rm -f "$body_file"
+}
+
+download_file() {
+  local url="$1"
+  local output="$2"
+
+  curl --fail --location --retry 3 --retry-delay 2 \
+    --connect-timeout 20 \
+    --output "$output" \
     "$url"
+}
+
+sha256_file() {
+  local path="$1"
+
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$path" | awk '{print $1}'
+    return 0
+  fi
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$path" | awk '{print $1}'
+    return 0
+  fi
+
+  echo "Missing required command: shasum or sha256sum"
+  exit 1
+}
+
+verify_runner_archive() {
+  local archive_name="$1"
+  local expected_sha256="$2"
+  local actual_sha256
+
+  if [[ -n "$expected_sha256" && "$expected_sha256" != "null" ]]; then
+    actual_sha256="$(sha256_file "$archive_name")"
+    if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+      echo "Checksum mismatch for $archive_name"
+      echo "Expected: $expected_sha256"
+      echo "Actual:   $actual_sha256"
+      exit 1
+    fi
+  else
+    echo "No SHA256 digest published for $archive_name; validating archive format only."
+  fi
+
+  tar tzf "$archive_name" >/dev/null
 }
 
 fetch_runner_token() {
@@ -247,6 +317,11 @@ resolve_start_mode() {
     return 0
   fi
 
+  if [[ "$platform" == "osx" ]] && command -v launchctl >/dev/null 2>&1; then
+    echo "launchd"
+    return 0
+  fi
+
   if has_systemd; then
     echo "systemd"
     return 0
@@ -262,7 +337,14 @@ resolve_start_mode() {
 
 stop_existing_runner_processes() {
   local service_name="$1"
+  local launchd_label="com.github.actions.runner.${service_name}"
+  local launchd_plist="${HOME}/Library/LaunchAgents/${launchd_label}.plist"
   local old_pid
+
+  if [[ "$platform" == "osx" ]] && command -v launchctl >/dev/null 2>&1; then
+    launchctl bootout "gui/${UID}/${launchd_label}" >/dev/null 2>&1 || true
+    launchctl bootout "gui/${UID}" "$launchd_plist" >/dev/null 2>&1 || true
+  fi
 
   if [[ -x "./svc.sh" ]] && has_systemd; then
     sudo ./svc.sh stop || true
@@ -328,6 +410,50 @@ start_with_nohup() {
   echo "Runner started with PID $(cat runner.pid). Logs: ${PWD}/runner.log"
 }
 
+start_with_launchd() {
+  local service_name="$1"
+  local label="com.github.actions.runner.${service_name}"
+  local plist_dir="${HOME}/Library/LaunchAgents"
+  local plist_path="${plist_dir}/${label}.plist"
+
+  if [[ "$platform" != "osx" ]] || ! command -v launchctl >/dev/null 2>&1; then
+    echo "launchd was requested, but this host does not support launchd."
+    exit 1
+  fi
+
+  mkdir -p "$plist_dir"
+  cat >"$plist_path" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${label}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${PWD}/run.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${PWD}</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${PWD}/runner.log</string>
+  <key>StandardErrorPath</key>
+  <string>${PWD}/runner.err.log</string>
+</dict>
+</plist>
+EOF
+
+  launchctl bootout "gui/${UID}" "$plist_path" >/dev/null 2>&1 || true
+  launchctl bootstrap "gui/${UID}" "$plist_path"
+  launchctl kickstart -k "gui/${UID}/${label}"
+  echo "Runner started with launchd as ${label}."
+  echo "Logs: ${PWD}/runner.log and ${PWD}/runner.err.log"
+}
+
 echo "GitHub Actions Runner Setup"
 echo
 
@@ -387,13 +513,13 @@ replace_existing="$(prompt_yes_no "Replace existing runner with same name" "y")"
 install_root_default="$PWD/actions-runner-${org_name}-${runner_name}"
 install_root="$(prompt_default "Install directory" "$install_root_default")"
 
-start_mode="$(prompt_default "Start mode: auto, systemd, supervisor, nohup, foreground, none" "auto")"
+start_mode="$(prompt_default "Start mode: auto, launchd, systemd, supervisor, nohup, foreground, none" "auto")"
 start_mode="$(echo "$start_mode" | tr '[:upper:]' '[:lower:]')"
 case "$start_mode" in
-  auto|systemd|supervisor|nohup|foreground|none) ;;
+  auto|launchd|systemd|supervisor|nohup|foreground|none) ;;
   *)
     echo "Invalid start mode: $start_mode"
-    echo "Use auto, systemd, supervisor, nohup, foreground, or none."
+    echo "Use auto, launchd, systemd, supervisor, nohup, foreground, or none."
     exit 1
     ;;
 esac
@@ -432,7 +558,9 @@ fi
 if [[ ! -x "./config.sh" ]]; then
   echo "Resolving latest runner package for ${platform}-${arch}..."
   release_json="$(curl -fsSL https://api.github.com/repos/actions/runner/releases/latest)"
-  asset_url="$(jq -r --arg p "$platform" --arg a "$arch" '.assets[] | select(.name | test("^actions-runner-" + $p + "-" + $a + "-[0-9.]+\\.tar\\.gz$")) | .browser_download_url' <<<"$release_json" | head -n1)"
+  asset_json="$(jq -c --arg p "$platform" --arg a "$arch" '.assets[] | select(.name | test("^actions-runner-" + $p + "-" + $a + "-[0-9.]+\\.tar\\.gz$"))' <<<"$release_json" | head -n1)"
+  asset_url="$(jq -r '.browser_download_url' <<<"$asset_json")"
+  asset_digest="$(jq -r '.digest // empty' <<<"$asset_json" | sed 's/^sha256://')"
 
   if [[ -z "$asset_url" || "$asset_url" == "null" ]]; then
     echo "Could not find runner download for ${platform}-${arch}."
@@ -442,13 +570,17 @@ if [[ ! -x "./config.sh" ]]; then
   archive_name="$(basename "$asset_url")"
   if [[ ! -f "$archive_name" ]]; then
     echo "Downloading ${archive_name}..."
-    curl -fL -o "$archive_name" "$asset_url"
+    download_file "$asset_url" "$archive_name"
   fi
+
+  echo "Verifying ${archive_name}..."
+  verify_runner_archive "$archive_name" "$asset_digest"
 
   echo "Extracting ${archive_name}..."
   tar xzf "$archive_name"
 fi
 
+echo "Requesting GitHub Actions runner registration token..."
 registration_token="$(fetch_runner_token "$registration_endpoint")"
 
 config_args=(
@@ -494,6 +626,9 @@ case "$resolved_start_mode" in
     ;;
   supervisor)
     start_with_supervisor "$runner_service_name"
+    ;;
+  launchd)
+    start_with_launchd "$runner_service_name"
     ;;
   nohup)
     start_with_nohup

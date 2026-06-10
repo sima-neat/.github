@@ -10,7 +10,17 @@
       ],
       "repos": {
         ".github": "maintain",
-        "vulcan": "maintain"
+        "vulcan": "maintain",
+        "core": "maintain",
+        "llima": "maintain",
+        "insight": "maintain",
+        "apps": "maintain",
+        "docs": "maintain",
+        "models": "maintain",
+        "playbooks": "maintain",
+        "qat": "maintain",
+        "sima-cli": "maintain",
+        "model-sdk": "maintain"
       }
     },
     "dev": {
@@ -27,7 +37,10 @@
         "apps": "maintain",
         "docs": "maintain",
         "models": "maintain",
-        "playbooks": "maintain"
+        "playbooks": "maintain",
+        "qat": "maintain",
+        "sima-cli": "maintain",
+        "model-sdk": "maintain"
       }
     },
     "devops": {
@@ -45,7 +58,10 @@
         "internals": "maintain",
         "sima-cli": "maintain",
         "docs": "maintain",
-        "insight": "maintain"
+        "insight": "maintain",
+        "qat": "maintain",
+        "model-sdk": "maintain",
+        "kerrigan": "maintain"
       }
     },
     "platform": {
@@ -76,7 +92,8 @@
         "apps": "maintain",
         "docs": "maintain",
         "sdk": "maintain",
-        "model-sdk": "maintain"
+        "model-sdk": "maintain",
+        "qat": "maintain"
       }
     },
     "ae": {

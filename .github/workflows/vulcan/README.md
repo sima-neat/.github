@@ -100,6 +100,67 @@ jobs:
 | `fetch_depth` | `1` | Checkout fetch depth. Use `0` when versioning depends on tags or full history. |
 | `checkout_submodules` | `recursive` | Value passed to `actions/checkout` for submodule fetching. |
 
+## Release Branches And Draft Releases
+
+Use `vulcan-release.yml` for manually managed release lines that branch from
+`main` and publish patch tags from the release branch.
+
+The workflow creates or reuses `release-<release_line>`, creates an annotated
+`v<tag>` tag at the release branch HEAD, and creates a draft GitHub release.
+
+Example caller:
+
+```yaml
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_line:
+        description: Minor release line, for example 2.1
+        required: true
+        type: string
+      tag:
+        description: Patch release version without v prefix, for example 2.1.2
+        required: true
+        type: string
+      tag_exists_behavior:
+        description: Use move only for draft release correction.
+        required: false
+        default: fail
+        type: choice
+        options:
+          - fail
+          - move
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: sima-neat/.github/.github/workflows/vulcan-release.yml@main
+    with:
+      release_line: ${{ inputs.release_line }}
+      tag: ${{ inputs.tag }}
+      source_branch: main
+      tag_exists_behavior: ${{ inputs.tag_exists_behavior }}
+```
+
+Common inputs:
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `release_line` | required | Minor release line such as `2.1`; the workflow uses `release-2.1`. |
+| `tag` | required | Patch release version without `v`, such as `2.1.2`; must match the release line. |
+| `source_branch` | `main` | Source branch used only when creating a new release branch. |
+| `branch_exists_behavior` | `reuse` | One of `reuse`, `fail`, or `update_from_source`. |
+| `tag_exists_behavior` | `fail` | One of `fail` or `move`; moving is refused if the GitHub release is already published. |
+| `release_notes_mode` | `generated` | One of `generated`, `empty`, or `from_file`. |
+| `release_notes_file` | empty | File path used when `release_notes_mode` is `from_file`. |
+| `prerelease` | `false` | Marks the draft release as a prerelease. |
+| `latest` | `true` | Controls GitHub's latest-release marker. |
+| `dry_run` | `false` | Resolves and prints actions without pushing branches, tags, or releases. |
+
 ## Capacity Labels
 
 | Label | EC2 instance type |

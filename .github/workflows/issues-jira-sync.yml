@@ -47,7 +47,7 @@ on:
         type: string
       jira_project_key:
         required: false
-        default: "AUTO"
+        default: "NEAT"
         type: string
       jira_issue_type_name:
         required: false

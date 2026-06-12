@@ -1,0 +1,306 @@
+name: Vulcan Release
+
+on:
+  workflow_call:
+    inputs:
+      release_line:
+        description: Minor release line, for example 2.1. Creates or reuses release-2.1.
+        required: true
+        type: string
+      tag:
+        description: Patch release version without v prefix, for example 2.1.2.
+        required: true
+        type: string
+      source_branch:
+        description: Source branch for creating a new release branch.
+        required: false
+        type: string
+        default: main
+      branch_exists_behavior:
+        description: Behavior when release-{release_line} already exists. One of reuse, fail, update_from_source.
+        required: false
+        type: string
+        default: reuse
+      tag_exists_behavior:
+        description: Behavior when v{tag} already exists. One of fail, move.
+        required: false
+        type: string
+        default: fail
+      release_notes_mode:
+        description: Release notes mode. One of generated, empty, from_file.
+        required: false
+        type: string
+        default: generated
+      release_notes_file:
+        description: Release notes file path when release_notes_mode is from_file.
+        required: false
+        type: string
+        default: ""
+      prerelease:
+        description: Mark the draft release as a prerelease.
+        required: false
+        type: boolean
+        default: false
+      latest:
+        description: Mark the release as latest when published. Set false for prerelease or RC flows.
+        required: false
+        type: boolean
+        default: true
+      dry_run:
+        description: Resolve and print actions without pushing branches, tags, or releases.
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      release_branch:
+        description: Release branch name.
+        value: ${{ jobs.release.outputs.release_branch }}
+      tag_name:
+        description: Release tag name.
+        value: ${{ jobs.release.outputs.tag_name }}
+      target_sha:
+        description: Commit SHA tagged by this workflow.
+        value: ${{ jobs.release.outputs.target_sha }}
+      release_url:
+        description: Draft release URL, empty in dry-run mode.
+        value: ${{ jobs.release.outputs.release_url }}
+      created_branch:
+        description: true when this run created the release branch.
+        value: ${{ jobs.release.outputs.created_branch }}
+      moved_tag:
+        description: true when this run moved an existing tag.
+        value: ${{ jobs.release.outputs.moved_tag }}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.repository }}-${{ inputs.release_line }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Prepare draft release
+    runs-on: ubuntu-latest
+    outputs:
+      release_branch: ${{ steps.release.outputs.release_branch }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      target_sha: ${{ steps.release.outputs.target_sha }}
+      release_url: ${{ steps.release.outputs.release_url }}
+      created_branch: ${{ steps.release.outputs.created_branch }}
+      moved_tag: ${{ steps.release.outputs.moved_tag }}
+
+    steps:
+      - name: Checkout source branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.source_branch }}
+          fetch-depth: 0
+
+      - name: Create branch, tag, and draft release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_LINE: ${{ inputs.release_line }}
+          VERSION_TAG: ${{ inputs.tag }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          BRANCH_EXISTS_BEHAVIOR: ${{ inputs.branch_exists_behavior }}
+          TAG_EXISTS_BEHAVIOR: ${{ inputs.tag_exists_behavior }}
+          RELEASE_NOTES_MODE: ${{ inputs.release_notes_mode }}
+          RELEASE_NOTES_FILE: ${{ inputs.release_notes_file }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          LATEST: ${{ inputs.latest }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_line="${RELEASE_LINE}"
+          version_tag="${VERSION_TAG}"
+          source_branch="${SOURCE_BRANCH}"
+          branch_exists_behavior="${BRANCH_EXISTS_BEHAVIOR}"
+          tag_exists_behavior="${TAG_EXISTS_BEHAVIOR}"
+          release_notes_mode="${RELEASE_NOTES_MODE}"
+          release_notes_file="${RELEASE_NOTES_FILE}"
+          prerelease="${PRERELEASE}"
+          latest="${LATEST}"
+          dry_run="${DRY_RUN}"
+
+          fail() {
+            echo "ERROR: $*" >&2
+            exit 1
+          }
+
+          [[ "${release_line}" =~ ^[0-9]+\.[0-9]+$ ]] ||
+            fail "release_line must look like 2.1, got: ${release_line}"
+          [[ "${version_tag}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z][0-9A-Za-z.-]*)?$ ]] ||
+            fail "tag must look like 2.1.2, got: ${version_tag}"
+          [[ "${version_tag}" == "${release_line}".* ]] ||
+            fail "tag ${version_tag} does not belong to release line ${release_line}"
+
+          case "${branch_exists_behavior}" in
+            reuse|fail|update_from_source) ;;
+            *) fail "branch_exists_behavior must be one of reuse, fail, update_from_source" ;;
+          esac
+          case "${tag_exists_behavior}" in
+            fail|move) ;;
+            *) fail "tag_exists_behavior must be one of fail, move" ;;
+          esac
+          case "${release_notes_mode}" in
+            generated|empty|from_file) ;;
+            *) fail "release_notes_mode must be one of generated, empty, from_file" ;;
+          esac
+          if [[ "${release_notes_mode}" == "from_file" && ! -f "${release_notes_file}" ]]; then
+            fail "release_notes_file does not exist: ${release_notes_file}"
+          fi
+
+          release_branch="release-${release_line}"
+          tag_name="v${version_tag}"
+          created_branch=false
+          moved_tag=false
+          release_url=""
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --prune --no-tags origin '+refs/heads/*:refs/remotes/origin/*'
+          git fetch --prune --tags origin '+refs/tags/*:refs/tags/*'
+
+          git show-ref --verify --quiet "refs/remotes/origin/${source_branch}" ||
+            fail "source branch does not exist on origin: ${source_branch}"
+          source_sha="$(git rev-parse "origin/${source_branch}")"
+
+          if git show-ref --verify --quiet "refs/remotes/origin/${release_branch}"; then
+            case "${branch_exists_behavior}" in
+              fail)
+                fail "release branch already exists: ${release_branch}"
+                ;;
+              reuse)
+                git switch -C "${release_branch}" "origin/${release_branch}"
+                ;;
+              update_from_source)
+                git switch -C "${release_branch}" "${source_sha}"
+                if [[ "${dry_run}" != "true" ]]; then
+                  git push origin "${release_branch}"
+                fi
+                ;;
+            esac
+          else
+            created_branch=true
+            git switch -C "${release_branch}" "${source_sha}"
+            if [[ "${dry_run}" != "true" ]]; then
+              git push origin "${release_branch}"
+            fi
+          fi
+
+          target_sha="$(git rev-parse HEAD)"
+
+          existing_remote_tag=false
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag_name}" >/dev/null 2>&1; then
+            existing_remote_tag=true
+          fi
+
+          existing_release=false
+          existing_release_draft=false
+          if gh release view "${tag_name}" --json isDraft >/tmp/release.json 2>/dev/null; then
+            existing_release=true
+            existing_release_draft="$(python3 -c 'import json; print("true" if json.load(open("/tmp/release.json")).get("isDraft") else "false")')"
+          fi
+
+          if [[ "${existing_remote_tag}" == "true" ]]; then
+            if [[ "${tag_exists_behavior}" != "move" ]]; then
+              fail "tag already exists: ${tag_name}; set tag_exists_behavior=move to retag"
+            fi
+            if [[ "${existing_release}" == "true" && "${existing_release_draft}" != "true" ]]; then
+              fail "refusing to move ${tag_name}; its GitHub release is already published"
+            fi
+            moved_tag=true
+            if [[ "${dry_run}" != "true" ]]; then
+              git tag -d "${tag_name}" >/dev/null 2>&1 || true
+              git push --delete origin "${tag_name}"
+            fi
+          elif [[ "${existing_release}" == "true" ]]; then
+            fail "GitHub release exists without a matching remote tag: ${tag_name}"
+          fi
+
+          if [[ "${dry_run}" != "true" ]]; then
+            git tag -a "${tag_name}" "${target_sha}" -m "Release ${tag_name}"
+            git push origin "${tag_name}"
+          fi
+
+          if [[ "${dry_run}" != "true" ]]; then
+            release_args=("${tag_name}" "--draft" "--verify-tag" "--target" "${target_sha}" "--title" "Release ${tag_name}")
+            if [[ "${prerelease}" == "true" ]]; then
+              release_args+=("--prerelease")
+            fi
+            if [[ "${latest}" == "true" ]]; then
+              release_args+=("--latest")
+            else
+              release_args+=("--latest=false")
+            fi
+            case "${release_notes_mode}" in
+              generated)
+                release_args+=("--generate-notes")
+                ;;
+              empty)
+                release_args+=("--notes" "")
+                ;;
+              from_file)
+                release_args+=("--notes-file" "${release_notes_file}")
+                ;;
+            esac
+
+            if [[ "${existing_release}" == "true" ]]; then
+              if [[ "${existing_release_draft}" != "true" ]]; then
+                fail "refusing to update published release: ${tag_name}"
+              fi
+              edit_args=("${tag_name}" "--draft" "--target" "${target_sha}" "--title" "Release ${tag_name}")
+              if [[ "${prerelease}" == "true" ]]; then
+                edit_args+=("--prerelease")
+              fi
+              if [[ "${latest}" == "true" ]]; then
+                edit_args+=("--latest")
+              fi
+              case "${release_notes_mode}" in
+                empty)
+                  edit_args+=("--notes" "")
+                  ;;
+                from_file)
+                  edit_args+=("--notes-file" "${release_notes_file}")
+                  ;;
+                generated)
+                  echo "Existing draft release found; leaving generated notes unchanged."
+                  ;;
+              esac
+              gh release edit "${edit_args[@]}"
+            else
+              gh release create "${release_args[@]}"
+            fi
+            release_url="$(gh release view "${tag_name}" --json url --jq '.url')"
+          fi
+
+          {
+            echo "release_branch=${release_branch}"
+            echo "tag_name=${tag_name}"
+            echo "target_sha=${target_sha}"
+            echo "release_url=${release_url}"
+            echo "created_branch=${created_branch}"
+            echo "moved_tag=${moved_tag}"
+          } >> "${GITHUB_OUTPUT}"
+
+          {
+            echo "## Vulcan Release"
+            echo
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Repository | ${GITHUB_REPOSITORY} |"
+            echo "| Source branch | ${source_branch} |"
+            echo "| Release branch | ${release_branch} |"
+            echo "| Tag | ${tag_name} |"
+            echo "| Target SHA | ${target_sha} |"
+            echo "| Created branch | ${created_branch} |"
+            echo "| Moved tag | ${moved_tag} |"
+            echo "| Dry run | ${dry_run} |"
+            if [[ -n "${release_url}" ]]; then
+              echo "| Draft release | ${release_url} |"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"

@@ -126,7 +126,7 @@ jobs:
           docker version
           docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
           test -x /mnt/vulcan/bin/sima-cli
-          /mnt/vulcan/bin/sima-cli version
+          /mnt/vulcan/bin/sima-cli --version
 
       - name: Ensure SDK container
         if: ${{ inputs.ensure_sdk_container }}

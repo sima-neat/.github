@@ -10,6 +10,7 @@ import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from collections import Counter
 from typing import Any
 
 
@@ -413,6 +414,41 @@ def print_issues(title: str, issues: list[ReleaseIssue]) -> None:
     end_group()
 
 
+def print_item_diagnostics(
+    items: list[dict[str, Any]],
+    release_field_name: str,
+    release_status_field_name: str,
+    status_field_name: str,
+) -> None:
+    content_types: Counter[str] = Counter()
+    field_names: Counter[str] = Counter()
+    release_values: Counter[str] = Counter()
+
+    for item in items:
+        content = item.get("content") or {}
+        content_types[content.get("__typename") or "(no content)"] += 1
+        values = {}
+        for value_node in item["fieldValues"]["nodes"]:
+            if not value_node:
+                continue
+            name, value = field_value(value_node)
+            if not name:
+                continue
+            field_names[name] += 1
+            values[name] = value
+        if values.get(release_field_name):
+            release_values[values[release_field_name] or "(empty)"] += 1
+
+    log_group("Project item diagnostics")
+    print(f"Project items scanned: {len(items)}")
+    print(f"Content types: {dict(sorted(content_types.items()))}")
+    print(f"Visible field names: {', '.join(sorted(field_names)) or '(none)'}")
+    print(f"Visible {release_field_name} values: {dict(sorted(release_values.items()))}")
+    print(f"Resolved status field: {status_field_name}")
+    print(f"Resolved release-status field: {release_status_field_name}")
+    end_group()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--release-version", required=True)
@@ -466,6 +502,12 @@ def main() -> int:
     print_issues("Issues blocking release", blocking_issues)
 
     if not issues and not args.allow_empty_release:
+        print_item_diagnostics(
+            items=items,
+            release_field_name=release_field.name,
+            release_status_field_name=release_status_field.name,
+            status_field_name=status_field.name,
+        )
         die(
             f"no GitHub issues found in project {project['title']} with "
             f"{args.release_field_name}={args.release_version}"

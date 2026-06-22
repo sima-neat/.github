@@ -99,7 +99,7 @@ jobs:
   validate-release-readiness:
     name: Validate release readiness
     if: ${{ inputs.validate_release_issues }}
-    uses: sima-neat/.github/.github/workflows/release-engineering.yml@main
+    uses: ./.github/workflows/release-engineering.yml
     with:
       release_version: ${{ inputs.tag }}
       dry_run: ${{ inputs.dry_run }}

@@ -106,6 +106,20 @@
         "apps": "maintain",
         "docs": "maintain"
       }
+    },
+    "qa": {
+      "name": "qa",
+      "description": "Quality Assurance",
+      "privacy": "closed",
+      "org_roles": [
+        "all_repository_read"
+      ],
+      "repos": {
+        "apps": "maintain",
+        "insight": "maintain",
+        "sima-cli": "maintain",
+        "playbooks": "maintain"
+      }
     }
   },
   "legacy_teams": {

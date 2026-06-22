@@ -51,6 +51,23 @@ on:
         required: false
         type: boolean
         default: false
+      validate_release_issues:
+        description: Run Release Engineering issue validation before creating release artifacts.
+        required: false
+        type: boolean
+        default: false
+      release_engineering_ref:
+        description: Ref of sima-neat/.github used by Release Engineering validation.
+        required: false
+        type: string
+        default: main
+    secrets:
+      NEAT_RELEASES_APP_ID:
+        description: GitHub App ID for Release Engineering validation.
+        required: false
+      NEAT_RELEASES_APP_PRIVATE_KEY:
+        description: GitHub App private key for Release Engineering validation.
+        required: false
     outputs:
       release_branch:
         description: Release branch name.
@@ -79,8 +96,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate-release-readiness:
+    name: Validate release readiness
+    if: ${{ inputs.validate_release_issues }}
+    uses: ./.github/workflows/release-engineering.yml
+    with:
+      release_version: ${{ inputs.tag }}
+      dry_run: ${{ inputs.dry_run }}
+      release_engineering_ref: ${{ inputs.release_engineering_ref }}
+    secrets:
+      app_id: ${{ secrets.NEAT_RELEASES_APP_ID }}
+      app_private_key: ${{ secrets.NEAT_RELEASES_APP_PRIVATE_KEY }}
+
   release:
     name: Prepare draft release
+    needs:
+      - validate-release-readiness
+    if: ${{ always() && (!inputs.validate_release_issues || needs.validate-release-readiness.result == 'success') }}
     runs-on: ubuntu-latest
     outputs:
       release_branch: ${{ steps.release.outputs.release_branch }}

@@ -1,0 +1,139 @@
+name: Release Engineering
+
+on:
+  workflow_call:
+    inputs:
+      release_version:
+        description: Release version to validate, for example 0.2.1, 2.1.2.1, or 2.1.12.
+        required: true
+        type: string
+      project_owner:
+        description: GitHub organization or user that owns the release project.
+        required: false
+        type: string
+        default: sima-neat
+      project_number:
+        description: GitHub Projects v2 project number for Neat Releases.
+        required: false
+        type: number
+        default: 6
+      release_field_name:
+        description: Project field that stores the target release version.
+        required: false
+        type: string
+        default: Target Release
+      status_field_name:
+        description: Project field that stores issue workflow status.
+        required: false
+        type: string
+        default: Status
+      done_status_value:
+        description: Status value required before the release can proceed.
+        required: false
+        type: string
+        default: Done
+      release_status_field_name:
+        description: Project field updated after validation passes.
+        required: false
+        type: string
+        default: Release Status
+      released_status_value:
+        description: Release status value written after validation passes.
+        required: false
+        type: string
+        default: released
+      allow_empty_release:
+        description: Allow validation to pass when no issues are targeted for the release.
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: Validate and print actions without updating project fields.
+        required: false
+        type: boolean
+        default: false
+      release_engineering_ref:
+        description: Ref of sima-neat/.github to checkout for shared scripts. Defaults to main for normal callers.
+        required: false
+        type: string
+        default: main
+    secrets:
+      app_id:
+        description: GitHub App ID for the Release Engineering app.
+        required: true
+      app_private_key:
+        description: GitHub App private key for the Release Engineering app.
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate-release-readiness:
+    name: Validate release readiness
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout shared release engineering scripts
+        uses: actions/checkout@v5
+        with:
+          repository: sima-neat/.github
+          ref: ${{ inputs.release_engineering_ref }}
+          path: release-engineering
+          persist-credentials: false
+
+      - name: Verify Release Engineering app credentials
+        env:
+          APP_ID: ${{ secrets.app_id }}
+          APP_PRIVATE_KEY: ${{ secrets.app_private_key }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${APP_ID}" || -z "${APP_PRIVATE_KEY}" ]]; then
+            {
+              echo "Release Engineering GitHub App credentials are not configured."
+              echo
+              echo "Expected secrets:"
+              echo "- NEAT_RELEASES_APP_ID"
+              echo "- NEAT_RELEASES_APP_PRIVATE_KEY"
+              echo
+              echo "Create and install the sima-neat-release-engineering GitHub App, then"
+              echo "make these secrets available to the repository calling this workflow."
+            } >&2
+            exit 1
+          fi
+
+      - name: Mint Release Engineering app token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.app_private_key }}
+          owner: ${{ inputs.project_owner }}
+          permission-organization-projects: write
+          permission-issues: read
+
+      - name: Validate release issues
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          PROJECT_OWNER: ${{ inputs.project_owner }}
+          PROJECT_NUMBER: ${{ inputs.project_number }}
+          RELEASE_FIELD_NAME: ${{ inputs.release_field_name }}
+          STATUS_FIELD_NAME: ${{ inputs.status_field_name }}
+          DONE_STATUS_VALUE: ${{ inputs.done_status_value }}
+          RELEASE_STATUS_FIELD_NAME: ${{ inputs.release_status_field_name }}
+          RELEASED_STATUS_VALUE: ${{ inputs.released_status_value }}
+          ALLOW_EMPTY_RELEASE: ${{ inputs.allow_empty_release }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          python3 release-engineering/scripts/release_issue_gate.py \
+            --release-version "${RELEASE_VERSION}" \
+            --project-owner "${PROJECT_OWNER}" \
+            --project-number "${PROJECT_NUMBER}" \
+            --release-field-name "${RELEASE_FIELD_NAME}" \
+            --status-field-name "${STATUS_FIELD_NAME}" \
+            --done-status-value "${DONE_STATUS_VALUE}" \
+            --release-status-field-name "${RELEASE_STATUS_FIELD_NAME}" \
+            --released-status-value "${RELEASED_STATUS_VALUE}" \
+            --allow-empty-release "${ALLOW_EMPTY_RELEASE}" \
+            --dry-run "${DRY_RUN}"

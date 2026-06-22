@@ -87,6 +87,17 @@ class GitHubGraphQL:
             die(f"GitHub GraphQL request failed: {exc}")
 
         if payload.get("errors"):
+            for error in payload["errors"]:
+                if (
+                    error.get("type") == "NOT_FOUND"
+                    and error.get("path") == ["organization", "projectV2"]
+                ):
+                    die(
+                        "GitHub token cannot access the requested organization project. "
+                        "Confirm the Release Engineering GitHub App is installed on the "
+                        "organization and has Organization permissions -> Projects: read/write. "
+                        f"Raw error: {json.dumps(error)}"
+                    )
             die(f"GitHub GraphQL returned errors: {json.dumps(payload['errors'], indent=2)}")
         return payload["data"]
 

@@ -61,6 +61,13 @@ on:
         required: false
         type: string
         default: main
+    secrets:
+      NEAT_RELEASES_APP_ID:
+        description: GitHub App ID for Release Engineering validation.
+        required: false
+      NEAT_RELEASES_APP_PRIVATE_KEY:
+        description: GitHub App private key for Release Engineering validation.
+        required: false
     outputs:
       release_branch:
         description: Release branch name.

@@ -321,9 +321,19 @@ def get_items(client: GitHubGraphQL, project_id: str) -> list[dict[str, Any]]:
 
 def require_field(fields: dict[str, FieldRef], name: str) -> FieldRef:
     field = fields.get(name)
-    if not field:
+    if field:
+        return field
+
+    normalized_name = name.casefold()
+    matches = [candidate for candidate in fields.values() if candidate.name.casefold() == normalized_name]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
         available = ", ".join(sorted(fields))
-        die(f"required project field not found: {name}. Available fields: {available}")
+        die(f"required project field name is ambiguous: {name}. Available fields: {available}")
+
+    available = ", ".join(sorted(fields))
+    die(f"required project field not found: {name}. Available fields: {available}")
     return field
 
 
@@ -428,8 +438,8 @@ def main() -> int:
     print(f"Release version: {args.release_version}")
     print(f"Dry run: {args.dry_run}")
 
-    require_field(fields, args.release_field_name)
-    require_field(fields, args.status_field_name)
+    release_field = require_field(fields, args.release_field_name)
+    status_field = require_field(fields, args.status_field_name)
     release_status_field = require_field(fields, args.release_status_field_name)
     released_option_id = require_single_select_option(release_status_field, args.released_status_value)
 
@@ -437,9 +447,9 @@ def main() -> int:
     issues, skipped = collect_release_issues(
         items=items,
         release_version=args.release_version,
-        release_field_name=args.release_field_name,
-        status_field_name=args.status_field_name,
-        release_status_field_name=args.release_status_field_name,
+        release_field_name=release_field.name,
+        status_field_name=status_field.name,
+        release_status_field_name=release_status_field.name,
     )
 
     if skipped:

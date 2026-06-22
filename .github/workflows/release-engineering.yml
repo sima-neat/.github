@@ -82,6 +82,26 @@ jobs:
           path: release-engineering
           persist-credentials: false
 
+      - name: Verify Release Engineering app credentials
+        env:
+          APP_ID: ${{ secrets.app_id }}
+          APP_PRIVATE_KEY: ${{ secrets.app_private_key }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${APP_ID}" || -z "${APP_PRIVATE_KEY}" ]]; then
+            {
+              echo "Release Engineering GitHub App credentials are not configured."
+              echo
+              echo "Expected secrets:"
+              echo "- NEAT_RELEASES_APP_ID"
+              echo "- NEAT_RELEASES_APP_PRIVATE_KEY"
+              echo
+              echo "Create and install the sima-neat-release-engineering GitHub App, then"
+              echo "make these secrets available to the repository calling this workflow."
+            } >&2
+            exit 1
+          fi
+
       - name: Mint Release Engineering app token
         id: app-token
         uses: actions/create-github-app-token@v2

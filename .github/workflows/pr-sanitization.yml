@@ -1,0 +1,39 @@
+name: PR Sanitization
+
+on:
+  workflow_call:
+    inputs:
+      allowed_base_patterns:
+        description: Comma-separated PR base branch patterns allowed for review.
+        required: false
+        default: develop,release-*,integration/*
+        type: string
+      shared_workflow_ref:
+        description: Ref of sima-neat/.github to checkout for validator scripts. Defaults to main for normal repo callers.
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  validate:
+    name: Validate PR target and issue reference
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout workflow repository
+        uses: actions/checkout@v5
+        with:
+          repository: sima-neat/.github
+          ref: ${{ inputs.shared_workflow_ref }}
+          path: shared-workflows
+
+      - name: Validate pull request hygiene
+        run: |
+          python3 shared-workflows/scripts/pr_sanitization_check.py \
+            --event-path "${GITHUB_EVENT_PATH}" \
+            --allowed-base-patterns "${ALLOWED_BASE_PATTERNS}"
+        env:
+          ALLOWED_BASE_PATTERNS: ${{ inputs.allowed_base_patterns }}

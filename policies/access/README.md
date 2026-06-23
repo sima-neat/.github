@@ -69,6 +69,7 @@ Current intended assignments:
 | `platform` | none |
 | `release` | none |
 | `ae` | none |
+| `qa` | `all_repository_read` |
 
 Avoid all-repository write, maintain, or admin unless there is a specific
 reviewed need. Prefer repo-specific grants.
@@ -93,6 +94,14 @@ The current model intentionally limits `ae` maintain access to:
 - `sima-cli`
 - `apps`
 - `docs`
+
+The `qa` team has organization-wide read access and maintain access for repos
+where QA needs to manage issues and release validation work:
+
+- `apps`
+- `insight`
+- `sima-cli`
+- `playbooks`
 
 ## Legacy Teams
 
@@ -155,7 +164,8 @@ runs.
 
 ## Migration Plan
 
-1. Move users into `admin`, `dev`, `devops`, `platform`, `release`, and `ae`.
+1. Move users into `admin`, `dev`, `devops`, `platform`, `release`, `ae`, and
+   `qa`.
 2. Remove direct assignments in GitHub after equivalent team membership is in
    place.
 3. Remove `argo` and `alpha` grants after migration is complete.

@@ -12,6 +12,7 @@ from pathlib import Path
 
 
 DEFAULT_ALLOWED_BASES = ("develop", "release-*", "integration/*")
+DEFAULT_ALLOWED_MAIN_SOURCES = ("develop", "release-*")
 
 ISSUE_PATTERNS = (
     re.compile(
@@ -62,11 +63,32 @@ def _has_issue_reference(body: str) -> bool:
     return any(pattern.search(body or "") for pattern in ISSUE_PATTERNS)
 
 
-def validate(base_ref: str, body: str, allowed_patterns: tuple[str, ...]) -> ValidationResult:
+def validate(
+    base_ref: str,
+    body: str,
+    allowed_patterns: tuple[str, ...],
+    head_ref: str = "",
+    allowed_main_source_patterns: tuple[str, ...] = DEFAULT_ALLOWED_MAIN_SOURCES,
+) -> ValidationResult:
     messages: list[str] = []
+    valid_main_promotion = False
 
     if not base_ref:
         messages.append("Unable to determine the pull request target branch.")
+    elif base_ref == "main":
+        allowed_source_text = ", ".join(allowed_main_source_patterns)
+        if not head_ref:
+            messages.append(
+                "Unable to determine the pull request source branch. PRs targeting main must "
+                f"come from {allowed_source_text} branches."
+            )
+        elif _base_allowed(head_ref, allowed_main_source_patterns):
+            valid_main_promotion = True
+        else:
+            messages.append(
+                f"This PR targets 'main' from '{head_ref}', but PRs targeting main must come "
+                f"from {allowed_source_text} branches."
+            )
     elif not _base_allowed(base_ref, allowed_patterns):
         allowed_text = ", ".join(allowed_patterns)
         messages.append(
@@ -75,7 +97,7 @@ def validate(base_ref: str, body: str, allowed_patterns: tuple[str, ...]) -> Val
             "release or promotion flow."
         )
 
-    if not _has_issue_reference(body):
+    if not valid_main_promotion and not _has_issue_reference(body):
         messages.append(
             "This PR description does not reference a GitHub issue. All work must start from an "
             "issue, and the PR body must link to that issue before review. Add a reference such as "
@@ -85,8 +107,9 @@ def validate(base_ref: str, body: str, allowed_patterns: tuple[str, ...]) -> Val
     return ValidationResult(ok=not messages, messages=tuple(messages))
 
 
-def _resolve_pr_fields(args: argparse.Namespace) -> tuple[str, str]:
+def _resolve_pr_fields(args: argparse.Namespace) -> tuple[str, str, str]:
     base_ref = args.base_ref
+    head_ref = args.head_ref
     body = args.body
 
     if args.event_path:
@@ -94,16 +117,19 @@ def _resolve_pr_fields(args: argparse.Namespace) -> tuple[str, str]:
         pr = event.get("pull_request") or {}
         if not base_ref:
             base_ref = ((pr.get("base") or {}).get("ref") or "").strip()
+        if not head_ref:
+            head_ref = ((pr.get("head") or {}).get("ref") or "").strip()
         if body is None:
             body = pr.get("body") or ""
 
-    return (base_ref or "").strip(), body or ""
+    return (base_ref or "").strip(), (head_ref or "").strip(), body or ""
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate PR target branch and issue references.")
     parser.add_argument("--event-path", default="", help="Path to GitHub event JSON.")
     parser.add_argument("--base-ref", default="", help="PR base branch override.")
+    parser.add_argument("--head-ref", default="", help="PR source branch override.")
     parser.add_argument("--body", default=None, help="PR body override.")
     parser.add_argument(
         "--allowed-base-patterns",
@@ -113,9 +139,9 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        base_ref, body = _resolve_pr_fields(args)
+        base_ref, head_ref, body = _resolve_pr_fields(args)
         allowed_patterns = _split_allowed_base_patterns(args.allowed_base_patterns)
-        result = validate(base_ref, body, allowed_patterns)
+        result = validate(base_ref, body, allowed_patterns, head_ref=head_ref)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1

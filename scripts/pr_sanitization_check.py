@@ -68,6 +68,8 @@ def validate(
     body: str,
     allowed_patterns: tuple[str, ...],
     head_ref: str = "",
+    head_repo: str = "",
+    base_repo: str = "",
     allowed_main_source_patterns: tuple[str, ...] = DEFAULT_ALLOWED_MAIN_SOURCES,
 ) -> ValidationResult:
     messages: list[str] = []
@@ -81,6 +83,11 @@ def validate(
             messages.append(
                 "Unable to determine the pull request source branch. PRs targeting main must "
                 f"come from {allowed_source_text} branches."
+            )
+        elif head_repo and base_repo and head_repo != base_repo:
+            messages.append(
+                f"This PR targets 'main' from fork repository '{head_repo}'. PRs targeting main "
+                f"must come from {allowed_source_text} branches in '{base_repo}'."
             )
         elif _base_allowed(head_ref, allowed_main_source_patterns):
             valid_main_promotion = True
@@ -107,22 +114,36 @@ def validate(
     return ValidationResult(ok=not messages, messages=tuple(messages))
 
 
-def _resolve_pr_fields(args: argparse.Namespace) -> tuple[str, str, str]:
+def _resolve_pr_fields(args: argparse.Namespace) -> tuple[str, str, str, str, str]:
     base_ref = args.base_ref
     head_ref = args.head_ref
+    base_repo = args.base_repo
+    head_repo = args.head_repo
     body = args.body
 
     if args.event_path:
         event = _load_event(args.event_path)
         pr = event.get("pull_request") or {}
+        base = pr.get("base") or {}
+        head = pr.get("head") or {}
         if not base_ref:
-            base_ref = ((pr.get("base") or {}).get("ref") or "").strip()
+            base_ref = (base.get("ref") or "").strip()
         if not head_ref:
-            head_ref = ((pr.get("head") or {}).get("ref") or "").strip()
+            head_ref = (head.get("ref") or "").strip()
+        if not base_repo:
+            base_repo = (((base.get("repo") or {}).get("full_name")) or "").strip()
+        if not head_repo:
+            head_repo = (((head.get("repo") or {}).get("full_name")) or "").strip()
         if body is None:
             body = pr.get("body") or ""
 
-    return (base_ref or "").strip(), (head_ref or "").strip(), body or ""
+    return (
+        (base_ref or "").strip(),
+        (head_ref or "").strip(),
+        (base_repo or "").strip(),
+        (head_repo or "").strip(),
+        body or "",
+    )
 
 
 def main() -> int:
@@ -130,6 +151,8 @@ def main() -> int:
     parser.add_argument("--event-path", default="", help="Path to GitHub event JSON.")
     parser.add_argument("--base-ref", default="", help="PR base branch override.")
     parser.add_argument("--head-ref", default="", help="PR source branch override.")
+    parser.add_argument("--base-repo", default="", help="PR base repository full name override.")
+    parser.add_argument("--head-repo", default="", help="PR source repository full name override.")
     parser.add_argument("--body", default=None, help="PR body override.")
     parser.add_argument(
         "--allowed-base-patterns",
@@ -139,9 +162,16 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        base_ref, head_ref, body = _resolve_pr_fields(args)
+        base_ref, head_ref, base_repo, head_repo, body = _resolve_pr_fields(args)
         allowed_patterns = _split_allowed_base_patterns(args.allowed_base_patterns)
-        result = validate(base_ref, body, allowed_patterns, head_ref=head_ref)
+        result = validate(
+            base_ref,
+            body,
+            allowed_patterns,
+            head_ref=head_ref,
+            head_repo=head_repo,
+            base_repo=base_repo,
+        )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1

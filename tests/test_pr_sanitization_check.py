@@ -1,8 +1,13 @@
+import argparse
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from scripts.pr_sanitization_check import (
     DEFAULT_ALLOWED_BASES,
     DEFAULT_ALLOWED_MAIN_SOURCES,
+    _resolve_pr_fields,
     validate,
 )
 
@@ -30,6 +35,8 @@ class PrSanitizationCheckTest(unittest.TestCase):
             "Release changelog only.",
             DEFAULT_ALLOWED_BASES,
             head_ref="develop",
+            head_repo="sima-neat/insight",
+            base_repo="sima-neat/insight",
         )
         self.assertTrue(result.ok)
 
@@ -39,8 +46,24 @@ class PrSanitizationCheckTest(unittest.TestCase):
             "Release changelog only.",
             DEFAULT_ALLOWED_BASES,
             head_ref="release-2.1",
+            head_repo="sima-neat/insight",
+            base_repo="sima-neat/insight",
         )
         self.assertTrue(result.ok)
+
+    def test_rejects_fork_develop_branch_to_main(self):
+        result = validate(
+            "main",
+            "Release changelog only.",
+            DEFAULT_ALLOWED_BASES,
+            head_ref="develop",
+            head_repo="external/insight",
+            base_repo="sima-neat/insight",
+        )
+        self.assertFalse(result.ok)
+        self.assertEqual(len(result.messages), 2)
+        self.assertIn("fork repository 'external/insight'", result.messages[0])
+        self.assertIn("does not reference a GitHub issue", result.messages[1])
 
     def test_rejects_feature_branch_to_main(self):
         result = validate(
@@ -48,6 +71,8 @@ class PrSanitizationCheckTest(unittest.TestCase):
             "Fixes #123",
             DEFAULT_ALLOWED_BASES,
             head_ref="feature/test",
+            head_repo="sima-neat/insight",
+            base_repo="sima-neat/insight",
         )
         self.assertFalse(result.ok)
         self.assertIn("targets 'main' from 'feature/test'", result.messages[0])
@@ -69,6 +94,40 @@ class PrSanitizationCheckTest(unittest.TestCase):
 
     def test_default_main_source_patterns_are_develop_and_release(self):
         self.assertEqual(DEFAULT_ALLOWED_MAIN_SOURCES, ("develop", "release-*"))
+
+    def test_resolves_head_and_base_repo_from_event_payload(self):
+        event = {
+            "pull_request": {
+                "base": {
+                    "ref": "main",
+                    "repo": {"full_name": "sima-neat/insight"},
+                },
+                "head": {
+                    "ref": "develop",
+                    "repo": {"full_name": "external/insight"},
+                },
+                "body": "Release changelog only.",
+            }
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            event_path = Path(tmp_dir) / "event.json"
+            event_path.write_text(json.dumps(event), encoding="utf-8")
+            args = argparse.Namespace(
+                event_path=str(event_path),
+                base_ref="",
+                head_ref="",
+                base_repo="",
+                head_repo="",
+                body=None,
+            )
+
+            base_ref, head_ref, base_repo, head_repo, body = _resolve_pr_fields(args)
+
+        self.assertEqual(base_ref, "main")
+        self.assertEqual(head_ref, "develop")
+        self.assertEqual(base_repo, "sima-neat/insight")
+        self.assertEqual(head_repo, "external/insight")
+        self.assertEqual(body, "Release changelog only.")
 
 
 if __name__ == "__main__":

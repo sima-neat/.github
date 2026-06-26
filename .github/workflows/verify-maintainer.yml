@@ -4,14 +4,17 @@ on:
   workflow_call:
     inputs:
       allowed_permissions:
-        description: Comma-separated repository permission levels allowed to continue.
+        description: Comma-separated repository role names allowed to continue.
         required: false
         type: string
         default: admin,maintain
     outputs:
       permission:
-        description: Permission level detected for the workflow actor.
+        description: Legacy base permission detected for the workflow actor.
         value: ${{ jobs.verify-maintainer.outputs.permission }}
+      role_name:
+        description: Effective repository role detected for the workflow actor.
+        value: ${{ jobs.verify-maintainer.outputs.role_name }}
 
 permissions:
   contents: read
@@ -22,6 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       permission: ${{ steps.permission.outputs.permission }}
+      role_name: ${{ steps.permission.outputs.role_name }}
 
     steps:
       - name: Check actor repository permission
@@ -64,7 +68,7 @@ jobs:
 
           try:
               with urllib.request.urlopen(req) as resp:
-                  permission = json.loads(resp.read().decode("utf-8")).get("permission", "")
+                  payload = json.loads(resp.read().decode("utf-8"))
           except urllib.error.HTTPError as exc:
               body = exc.read().decode("utf-8", errors="replace")
               print(
@@ -74,17 +78,25 @@ jobs:
               )
               sys.exit(1)
 
+          permission = payload.get("permission", "")
+          role_name = payload.get("role_name", "") or permission
+
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"permission={permission}\n")
+              output.write(f"role_name={role_name}\n")
 
-          if permission not in allowed:
+          if role_name not in allowed:
               allowed_display = ", ".join(sorted(allowed))
               print(
-                  f"Actor {actor} has repository permission '{permission}', "
+                  f"Actor {actor} has repository role '{role_name}' "
+                  f"(legacy permission '{permission}'), "
                   f"but this workflow requires one of: {allowed_display}.",
                   file=sys.stderr,
               )
               sys.exit(1)
 
-          print(f"Actor {actor} authorized with repository permission '{permission}'.")
+          print(
+              f"Actor {actor} authorized with repository role '{role_name}' "
+              f"(legacy permission '{permission}')."
+          )
           PY

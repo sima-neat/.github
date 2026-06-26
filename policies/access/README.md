@@ -67,7 +67,6 @@ Current intended assignments:
 | `dev` | `all_repository_read` |
 | `devops` | `ci_cd_admin`, `apps_manager` |
 | `platform` | none |
-| `release` | none |
 | `ae` | none |
 | `qa` | `all_repository_read` |
 
@@ -86,17 +85,22 @@ Supported permissions:
 - `maintain`
 - `admin`
 
-Prefer `maintain` for repo stewardship and `push` for code contribution without
-repo settings control.
+Prefer `maintain` only for repo stewardship and release/operations ownership.
+Use `push` or `write` for code contribution without repo settings control.
 
-The current model intentionally limits `ae` maintain access to:
+The current model keeps day-to-day contributor teams on `write` unless they have
+an explicit stewardship responsibility. This includes:
 
-- `sima-cli`
-- `apps`
-- `docs`
+- `dev`
+- `platform`
+- `ae`
+- `qa`
 
-The `qa` team has organization-wide read access and maintain access for repos
-where QA needs to manage issues and release validation work:
+Release and operations stewardship is represented separately through `devops`
+and `admin` repo grants.
+
+The `qa` team has organization-wide read access and write access for repos
+where QA needs to contribute tests, issues, and validation work:
 
 - `apps`
 - `insight`
@@ -164,8 +168,7 @@ runs.
 
 ## Migration Plan
 
-1. Move users into `admin`, `dev`, `devops`, `platform`, `release`, `ae`, and
-   `qa`.
+1. Move users into `admin`, `dev`, `devops`, `platform`, `ae`, and `qa`.
 2. Remove direct assignments in GitHub after equivalent team membership is in
    place.
 3. Remove `argo` and `alpha` grants after migration is complete.

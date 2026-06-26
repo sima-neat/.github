@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
+import re
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -155,6 +158,94 @@ def string_list(value: Any, field: str) -> list[str]:
     return value
 
 
+def sanitize_path(value: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip("-")
+    return safe or "repo"
+
+
+def cross_reference_config(config: dict[str, Any]) -> dict[str, dict[str, str]]:
+    repos = config.get("cross_reference_repos", [])
+    if not isinstance(repos, list):
+        raise SystemExit("cross_reference_repos must be a list when provided")
+
+    by_repo: dict[str, dict[str, str]] = {}
+    for item in repos:
+        if not isinstance(item, dict):
+            raise SystemExit("cross_reference_repos entries must be JSON objects")
+        repository = item.get("repository")
+        if not isinstance(repository, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+            raise SystemExit(f"Invalid cross-reference repository: {repository!r}")
+        ref = item.get("ref", "main")
+        if not isinstance(ref, str) or not re.fullmatch(r"[A-Za-z0-9_./-]+", ref):
+            raise SystemExit(f"Invalid ref for {repository}: {ref!r}")
+        path = item.get("path", sanitize_path(repository))
+        if not isinstance(path, str) or path.startswith("/") or ".." in Path(path).parts:
+            raise SystemExit(f"Invalid path for {repository}: {path!r}")
+        by_repo[repository] = {"repository": repository, "ref": ref, "path": path}
+    return by_repo
+
+
+def clone_repo(repository: str, ref: str, destination: Path, token: str) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    auth = base64.b64encode(f"x-access-token:{token}".encode("utf-8")).decode("ascii")
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            f"http.https://github.com/.extraheader=AUTHORIZATION: basic {auth}",
+            "clone",
+            "--depth",
+            "1",
+            "--branch",
+            ref,
+            f"https://github.com/{repository}.git",
+            str(destination),
+        ],
+        check=True,
+        env=env,
+    )
+
+
+def prepare_extended_analysis(args: argparse.Namespace) -> None:
+    token = require_env("GITHUB_TOKEN")
+    config = read_json(Path(args.repo_triage_path) / "config.json")
+    proposal = load_proposal(Path(args.proposal))
+    allowed = cross_reference_config(config)
+    extended_required = proposal.get("extended_analysis_required") is True
+    requested = string_list(proposal.get("extended_analysis_repos"), "extended_analysis_repos") if extended_required else []
+    requested = list(dict.fromkeys(requested))
+    disallowed = sorted(set(requested) - set(allowed))
+    selected = [repo for repo in requested if repo in allowed]
+
+    output_dir = Path(args.output_dir)
+    cloned: list[dict[str, str]] = []
+    for repo in selected:
+        spec = allowed[repo]
+        destination = output_dir / spec["path"]
+        clone_repo(spec["repository"], spec["ref"], destination, token)
+        cloned.append({
+            "repository": spec["repository"],
+            "ref": spec["ref"],
+            "path": str(destination),
+        })
+
+    summary = {
+        "requested": requested,
+        "cloned": cloned,
+        "disallowed": disallowed,
+        "run_extended_analysis": bool(cloned),
+    }
+    print(json.dumps(summary, indent=2))
+
+    github_output = os.environ.get("GITHUB_OUTPUT")
+    if github_output:
+        with open(github_output, "a", encoding="utf-8") as output:
+            output.write(f"run_extended_analysis={'true' if cloned else 'false'}\n")
+            output.write(f"summary={json.dumps(summary, separators=(',', ':'))}\n")
+
+
 def format_triage_comment(comment: str) -> str:
     return f"{TRIAGE_COMMENT_MARKER}\n{comment}"
 
@@ -247,6 +338,12 @@ def main() -> None:
     collect.add_argument("--repo-triage-path", required=True)
     collect.add_argument("--output", required=True)
     collect.set_defaults(func=collect_context)
+
+    prepare = subparsers.add_parser("prepare-extended-analysis")
+    prepare.add_argument("--repo-triage-path", required=True)
+    prepare.add_argument("--proposal", required=True)
+    prepare.add_argument("--output-dir", required=True)
+    prepare.set_defaults(func=prepare_extended_analysis)
 
     apply_cmd = subparsers.add_parser("apply-proposal")
     apply_cmd.add_argument("--issue-number", required=True)

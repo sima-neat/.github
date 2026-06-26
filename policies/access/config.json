@@ -116,9 +116,12 @@
       ],
       "repos": {
         "apps": "write",
+        "core": "write",
+        "docs": "write",
         "insight": "write",
-        "sima-cli": "write",
-        "playbooks": "write"
+        "playbooks": "write",
+        "sdk": "write",
+        "sima-cli": "write"
       }
     }
   },

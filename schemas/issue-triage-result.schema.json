@@ -48,8 +48,7 @@
       "items": {
         "type": "string",
         "maxLength": 100
-      },
-      "uniqueItems": true
+      }
     },
     "extended_analysis_required": {
       "type": "boolean"
@@ -59,8 +58,7 @@
       "items": {
         "type": "string",
         "maxLength": 100
-      },
-      "uniqueItems": true
+      }
     },
     "extended_analysis_reason": {
       "type": "string",

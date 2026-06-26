@@ -54,14 +54,17 @@
       ],
       "repos": {
         ".github": "maintain",
+        "apps": "maintain",
         "vulcan": "maintain",
         "core": "maintain",
         "internals": "maintain",
+        "llima": "maintain",
         "sima-cli": "maintain",
         "docs": "maintain",
         "insight": "maintain",
         "qat": "maintain",
         "model-sdk": "maintain",
+        "sdk": "maintain",
         "kerrigan": "maintain"
       }
     },
@@ -77,24 +80,6 @@
         "model-sdk": "write",
         "llima": "write",
         "models": "write"
-      }
-    },
-    "release": {
-      "name": "release",
-      "description": "Release",
-      "privacy": "closed",
-      "org_roles": [],
-      "repos": {
-        "core": "maintain",
-        "internals": "maintain",
-        "llima": "maintain",
-        "sima-cli": "maintain",
-        "insight": "maintain",
-        "apps": "maintain",
-        "docs": "maintain",
-        "sdk": "maintain",
-        "model-sdk": "maintain",
-        "qat": "maintain"
       }
     },
     "ae": {

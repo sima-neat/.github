@@ -67,7 +67,6 @@ Current intended assignments:
 | `dev` | `all_repository_read` |
 | `devops` | `ci_cd_admin`, `apps_manager` |
 | `platform` | none |
-| `release` | none |
 | `ae` | none |
 | `qa` | `all_repository_read` |
 
@@ -97,8 +96,8 @@ an explicit stewardship responsibility. This includes:
 - `ae`
 - `qa`
 
-Release and operations stewardship is represented separately through `release`,
-`devops`, and `admin` repo grants.
+Release and operations stewardship is represented separately through `devops`
+and `admin` repo grants.
 
 The `qa` team has organization-wide read access and write access for repos
 where QA needs to contribute tests, issues, and validation work:
@@ -169,8 +168,7 @@ runs.
 
 ## Migration Plan
 
-1. Move users into `admin`, `dev`, `devops`, `platform`, `release`, `ae`, and
-   `qa`.
+1. Move users into `admin`, `dev`, `devops`, `platform`, `ae`, and `qa`.
 2. Remove direct assignments in GitHub after equivalent team membership is in
    place.
 3. Remove `argo` and `alpha` grants after migration is complete.

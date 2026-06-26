@@ -102,9 +102,12 @@
       "privacy": "closed",
       "org_roles": [],
       "repos": {
-        "sima-cli": "write",
         "apps": "write",
-        "docs": "write"
+        "core": "write",
+        "docs": "write",
+        "insight": "write",
+        "sdk": "write",
+        "sima-cli": "write"
       }
     },
     "qa": {

@@ -213,7 +213,8 @@ def prepare_extended_analysis(args: argparse.Namespace) -> None:
     config = read_json(Path(args.repo_triage_path) / "config.json")
     proposal = load_proposal(Path(args.proposal))
     allowed = cross_reference_config(config)
-    requested = string_list(proposal.get("extended_analysis_repos"), "extended_analysis_repos")
+    extended_required = proposal.get("extended_analysis_required") is True
+    requested = string_list(proposal.get("extended_analysis_repos"), "extended_analysis_repos") if extended_required else []
     requested = list(dict.fromkeys(requested))
     disallowed = sorted(set(requested) - set(allowed))
     selected = [repo for repo in requested if repo in allowed]

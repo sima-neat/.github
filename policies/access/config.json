@@ -39,6 +39,7 @@
         "models": "write",
         "playbooks": "write",
         "qat": "write",
+        "sdk": "write",
         "sima-cli": "write",
         "model-sdk": "write"
       }

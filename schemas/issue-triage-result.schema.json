@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Issue Triage Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "category",
+    "area",
+    "confidence",
+    "labels",
+    "needs_human_review",
+    "public_comment"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "bug",
+        "enhancement",
+        "documentation",
+        "question",
+        "task",
+        "unknown"
+      ]
+    },
+    "area": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "uniqueItems": true
+    },
+    "needs_human_review": {
+      "type": "boolean"
+    },
+    "public_comment": {
+      "type": "string",
+      "maxLength": 2000
+    }
+  }
+}

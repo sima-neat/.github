@@ -20,7 +20,7 @@
         "playbooks": "maintain",
         "qat": "maintain",
         "sima-cli": "maintain",
-        "model-sdk": "maintain"
+        "model-compiler": "maintain"
       }
     },
     "dev": {
@@ -41,7 +41,7 @@
         "qat": "write",
         "sdk": "write",
         "sima-cli": "write",
-        "model-sdk": "write"
+        "model-compiler": "write"
       }
     },
     "devops": {
@@ -63,7 +63,7 @@
         "docs": "maintain",
         "insight": "maintain",
         "qat": "maintain",
-        "model-sdk": "maintain",
+        "model-compiler": "maintain",
         "sdk": "maintain",
         "kerrigan": "maintain"
       }
@@ -77,7 +77,7 @@
         "core": "write",
         "internals": "write",
         "sdk": "write",
-        "model-sdk": "write",
+        "model-compiler": "write",
         "llima": "write",
         "models": "write"
       }

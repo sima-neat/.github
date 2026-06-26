@@ -14,6 +14,7 @@ from typing import Any
 
 
 API_BASE = "https://api.github.com"
+TRIAGE_COMMENT_MARKER = "<!-- sima-neat-codex-issue-triage -->"
 
 
 def api_request(method: str, path: str, token: str, payload: dict[str, Any] | None = None) -> Any:
@@ -36,6 +37,20 @@ def api_request(method: str, path: str, token: str, payload: dict[str, Any] | No
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
         raise SystemExit(f"GitHub API {method} {path} failed: HTTP {exc.code} {body}") from exc
+
+
+def api_paginated(path: str, token: str, max_pages: int = 20) -> list[Any]:
+    separator = "&" if "?" in path else "?"
+    base_path = f"{path}{separator}per_page=100"
+    items: list[Any] = []
+    for page in range(1, max_pages + 1):
+        page_items = api_request("GET", f"{base_path}&page={page}", token)
+        if not isinstance(page_items, list):
+            raise SystemExit(f"GitHub API GET {base_path}&page={page} did not return a list")
+        items.extend(page_items)
+        if len(page_items) < 100:
+            break
+    return items
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -76,8 +91,9 @@ def collect_context(args: argparse.Namespace) -> None:
     triage_path = Path(args.repo_triage_path)
 
     issue = api_request("GET", f"/repos/{owner}/{name}/issues/{issue_number}", token)
-    comments = api_request("GET", f"/repos/{owner}/{name}/issues/{issue_number}/comments?per_page=100", token)
-    labels = api_request("GET", f"/repos/{owner}/{name}/labels?per_page=100", token)
+    all_comments = api_paginated(f"/repos/{owner}/{name}/issues/{issue_number}/comments", token)
+    comments = all_comments[-100:]
+    labels = api_paginated(f"/repos/{owner}/{name}/labels", token)
     config = read_json(triage_path / "config.json")
     triage_files = read_repo_triage_files(triage_path)
 
@@ -102,6 +118,9 @@ def collect_context(args: argparse.Namespace) -> None:
             }
             for comment in comments
         ],
+        "comments_included": len(comments),
+        "comments_total_fetched": len(all_comments),
+        "comments_order": "oldest_to_newest_latest_100",
         "available_labels": [label.get("name") for label in labels],
         "repo_triage_config": config,
         "repo_triage_files": triage_files,
@@ -136,6 +155,18 @@ def string_list(value: Any, field: str) -> list[str]:
     return value
 
 
+def format_triage_comment(comment: str) -> str:
+    return f"{TRIAGE_COMMENT_MARKER}\n{comment}"
+
+
+def find_existing_triage_comment(comments: list[Any]) -> dict[str, Any] | None:
+    for comment in reversed(comments):
+        body = comment.get("body") if isinstance(comment, dict) else None
+        if isinstance(body, str) and TRIAGE_COMMENT_MARKER in body:
+            return comment
+    return None
+
+
 def apply_proposal(args: argparse.Namespace) -> None:
     token = require_env("GITHUB_TOKEN")
     repo = require_env("GITHUB_REPOSITORY")
@@ -159,8 +190,12 @@ def apply_proposal(args: argparse.Namespace) -> None:
         allowed_labels = {label for label in labels_cfg.get("allowed", []) if isinstance(label, str)}
 
     labels = string_list(proposal.get("labels"), "labels")
-    disallowed = sorted(set(labels) - allowed_labels) if allowed_labels else labels
-    labels_to_apply = [] if disallowed else labels
+    if allowed_labels:
+        labels_to_apply = [label for label in labels if label in allowed_labels]
+        disallowed = sorted(set(labels) - allowed_labels)
+    else:
+        labels_to_apply = []
+        disallowed = labels
     comment = proposal.get("public_comment") or proposal.get("comment") or ""
     if comment is None:
         comment = ""
@@ -175,6 +210,7 @@ def apply_proposal(args: argparse.Namespace) -> None:
         "labels_to_apply": labels_to_apply,
         "labels_skipped": disallowed,
         "post_comment": bool(comment and post_comment),
+        "comment_mode": "update-or-create",
         "comment": comment,
     }
     print(json.dumps(summary, indent=2))
@@ -186,7 +222,13 @@ def apply_proposal(args: argparse.Namespace) -> None:
         api_request("POST", f"/repos/{owner}/{name}/issues/{issue_number}/labels", token, {"labels": labels_to_apply})
 
     if post_comment and comment:
-        api_request("POST", f"/repos/{owner}/{name}/issues/{issue_number}/comments", token, {"body": comment})
+        body = format_triage_comment(comment)
+        comments = api_paginated(f"/repos/{owner}/{name}/issues/{issue_number}/comments", token)
+        existing = find_existing_triage_comment(comments)
+        if existing:
+            api_request("PATCH", f"/repos/{owner}/{name}/issues/comments/{existing['id']}", token, {"body": body})
+        else:
+            api_request("POST", f"/repos/{owner}/{name}/issues/{issue_number}/comments", token, {"body": body})
 
 
 def require_env(name: str) -> str:

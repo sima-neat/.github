@@ -77,6 +77,24 @@ jobs:
           if [[ -n "${CODEX_MODEL}" ]]; then
             model_args=(--model "${CODEX_MODEL}")
           fi
+          codex_exec_help="$(codex exec --help)"
+          approval_args=()
+          if grep -q -- '--ask-for-approval' <<< "${codex_exec_help}"; then
+            approval_args=(--ask-for-approval never)
+          elif grep -q -- '--approval-policy' <<< "${codex_exec_help}"; then
+            approval_args=(--approval-policy never)
+          elif grep -q -- '-a,' <<< "${codex_exec_help}"; then
+            approval_args=(-a never)
+          fi
+          output_args=()
+          capture_stdout=true
+          if grep -q -- '--output-schema' <<< "${codex_exec_help}"; then
+            output_args+=(--output-schema "${GITHUB_WORKSPACE}/shared-github/schemas/issue-triage-result.schema.json")
+          fi
+          if grep -q -- '--output-last-message' <<< "${codex_exec_help}"; then
+            output_args+=(--output-last-message "${RUNNER_TEMP}/triage-proposal.json")
+            capture_stdout=false
+          fi
 
           cat > "${RUNNER_TEMP}/triage-prompt.md" <<'PROMPT'
           You are triaging a GitHub issue for the sima-neat organization.
@@ -110,14 +128,20 @@ jobs:
 
           sed -i.bak "s|ISSUE_CONTEXT_PATH|${RUNNER_TEMP}/issue-context.json|g" "${RUNNER_TEMP}/triage-prompt.md"
 
-          codex exec \
-            --sandbox read-only \
-            --ask-for-approval never \
-            --cd "${GITHUB_WORKSPACE}/caller-repo" \
-            --output-schema "${GITHUB_WORKSPACE}/shared-github/schemas/issue-triage-result.schema.json" \
-            --output-last-message "${RUNNER_TEMP}/triage-proposal.json" \
-            "${model_args[@]}" \
+          codex_cmd=(
+            codex exec
+            --sandbox read-only
+            "${approval_args[@]}"
+            --cd "${GITHUB_WORKSPACE}/caller-repo"
+            "${output_args[@]}"
+            "${model_args[@]}"
             "$(cat "${RUNNER_TEMP}/triage-prompt.md")"
+          )
+          if [[ "${capture_stdout}" == "true" ]]; then
+            "${codex_cmd[@]}" > "${RUNNER_TEMP}/triage-proposal.json"
+          else
+            "${codex_cmd[@]}"
+          fi
 
           cat "${RUNNER_TEMP}/triage-proposal.json"
 
@@ -142,6 +166,24 @@ jobs:
           model_args=()
           if [[ -n "${CODEX_MODEL}" ]]; then
             model_args=(--model "${CODEX_MODEL}")
+          fi
+          codex_exec_help="$(codex exec --help)"
+          approval_args=()
+          if grep -q -- '--ask-for-approval' <<< "${codex_exec_help}"; then
+            approval_args=(--ask-for-approval never)
+          elif grep -q -- '--approval-policy' <<< "${codex_exec_help}"; then
+            approval_args=(--approval-policy never)
+          elif grep -q -- '-a,' <<< "${codex_exec_help}"; then
+            approval_args=(-a never)
+          fi
+          output_args=()
+          capture_stdout=true
+          if grep -q -- '--output-schema' <<< "${codex_exec_help}"; then
+            output_args+=(--output-schema "${GITHUB_WORKSPACE}/shared-github/schemas/issue-triage-result.schema.json")
+          fi
+          if grep -q -- '--output-last-message' <<< "${codex_exec_help}"; then
+            output_args+=(--output-last-message "${RUNNER_TEMP}/triage-proposal.json")
+            capture_stdout=false
           fi
 
           cat > "${RUNNER_TEMP}/extended-triage-prompt.md" <<'PROMPT'
@@ -182,15 +224,21 @@ jobs:
             -e "s|EXTENDED_SUMMARY_PATH|${RUNNER_TEMP}/extended-analysis-summary.json|g" \
             "${RUNNER_TEMP}/extended-triage-prompt.md"
 
-          codex exec \
-            --sandbox read-only \
-            --ask-for-approval never \
-            --cd "${GITHUB_WORKSPACE}/caller-repo" \
-            --add-dir "${RUNNER_TEMP}/cross-repos" \
-            --output-schema "${GITHUB_WORKSPACE}/shared-github/schemas/issue-triage-result.schema.json" \
-            --output-last-message "${RUNNER_TEMP}/triage-proposal.json" \
-            "${model_args[@]}" \
+          codex_cmd=(
+            codex exec
+            --sandbox read-only
+            "${approval_args[@]}"
+            --cd "${GITHUB_WORKSPACE}/caller-repo"
+            --add-dir "${RUNNER_TEMP}/cross-repos"
+            "${output_args[@]}"
+            "${model_args[@]}"
             "$(cat "${RUNNER_TEMP}/extended-triage-prompt.md")"
+          )
+          if [[ "${capture_stdout}" == "true" ]]; then
+            "${codex_cmd[@]}" > "${RUNNER_TEMP}/triage-proposal.json"
+          else
+            "${codex_cmd[@]}"
+          fi
 
           cat "${RUNNER_TEMP}/triage-proposal.json"
 

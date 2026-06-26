@@ -31,16 +31,16 @@
         "all_repository_read"
       ],
       "repos": {
-        "core": "maintain",
-        "llima": "maintain",
-        "insight": "maintain",
-        "apps": "maintain",
-        "docs": "maintain",
-        "models": "maintain",
-        "playbooks": "maintain",
-        "qat": "maintain",
-        "sima-cli": "maintain",
-        "model-sdk": "maintain"
+        "core": "write",
+        "llima": "write",
+        "insight": "write",
+        "apps": "write",
+        "docs": "write",
+        "models": "write",
+        "playbooks": "write",
+        "qat": "write",
+        "sima-cli": "write",
+        "model-sdk": "write"
       }
     },
     "devops": {
@@ -70,12 +70,12 @@
       "privacy": "closed",
       "org_roles": [],
       "repos": {
-        "core": "maintain",
-        "internals": "maintain",
-        "sdk": "maintain",
-        "model-sdk": "maintain",
-        "llima": "maintain",
-        "models": "maintain"
+        "core": "write",
+        "internals": "write",
+        "sdk": "write",
+        "model-sdk": "write",
+        "llima": "write",
+        "models": "write"
       }
     },
     "release": {
@@ -102,9 +102,9 @@
       "privacy": "closed",
       "org_roles": [],
       "repos": {
-        "sima-cli": "maintain",
-        "apps": "maintain",
-        "docs": "maintain"
+        "sima-cli": "write",
+        "apps": "write",
+        "docs": "write"
       }
     },
     "qa": {
@@ -115,10 +115,10 @@
         "all_repository_read"
       ],
       "repos": {
-        "apps": "maintain",
-        "insight": "maintain",
-        "sima-cli": "maintain",
-        "playbooks": "maintain"
+        "apps": "write",
+        "insight": "write",
+        "sima-cli": "write",
+        "playbooks": "write"
       }
     }
   },

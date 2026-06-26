@@ -27,6 +27,10 @@ on:
         required: false
         type: string
         default: ""
+    secrets:
+      cross_repo_token:
+        description: Optional token with read access to configured cross-reference repositories.
+        required: false
 
 permissions:
   contents: read
@@ -86,6 +90,9 @@ jobs:
             "area": "short area name or unknown",
             "confidence": "low|medium|high",
             "labels": ["only labels explicitly allowed by repo_triage_config.labels.allowed"],
+            "extended_analysis_required": false,
+            "extended_analysis_repos": ["only repositories listed by repo_triage_config.cross_reference_repos when more analysis is needed"],
+            "extended_analysis_reason": "Short reason, or empty string.",
             "needs_human_review": true,
             "public_comment": "A concise, professional triage comment. Ask for missing information if needed. Do not claim a root cause unless evidence is strong."
           }
@@ -96,6 +103,8 @@ jobs:
           - Do not rewrite the issue body.
           - Do not include private/internal-only details in public_comment.
           - If labels.allowed is missing or empty, return an empty labels list.
+          - Request extended analysis only when the issue has enough specifics to justify code or docs inspection in another repo.
+          - Request only repos listed in repo_triage_config.cross_reference_repos.
           - If confidence is low, use needs_human_review true and keep the comment conservative.
           PROMPT
 
@@ -109,6 +118,79 @@ jobs:
             --output-last-message "${RUNNER_TEMP}/triage-proposal.json" \
             "${model_args[@]}" \
             "$(cat "${RUNNER_TEMP}/triage-prompt.md")"
+
+          cat "${RUNNER_TEMP}/triage-proposal.json"
+
+      - name: Prepare extended analysis repositories
+        id: extended
+        env:
+          GITHUB_TOKEN: ${{ secrets.cross_repo_token || github.token }}
+        run: |
+          python3 shared-github/scripts/issue_triage.py prepare-extended-analysis \
+            --repo-triage-path "caller-repo/${{ inputs.repo_triage_path }}" \
+            --proposal "${RUNNER_TEMP}/triage-proposal.json" \
+            --output-dir "${RUNNER_TEMP}/cross-repos"
+
+      - name: Run Codex extended triage
+        if: steps.extended.outputs.run_extended_analysis == 'true'
+        env:
+          CODEX_MODEL: ${{ inputs.codex_model }}
+          EXTENDED_SUMMARY: ${{ steps.extended.outputs.summary }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${EXTENDED_SUMMARY}" > "${RUNNER_TEMP}/extended-analysis-summary.json"
+          model_args=()
+          if [[ -n "${CODEX_MODEL}" ]]; then
+            model_args=(--model "${CODEX_MODEL}")
+          fi
+
+          cat > "${RUNNER_TEMP}/extended-triage-prompt.md" <<'PROMPT'
+          You are completing a second-pass GitHub issue triage for the sima-neat organization.
+
+          Read the original issue context JSON at ISSUE_CONTEXT_PATH.
+          Read the initial triage proposal JSON at INITIAL_PROPOSAL_PATH.
+          Additional cross-reference repositories were cloned read-only under CROSS_REPOS_PATH. Read the clone summary JSON at EXTENDED_SUMMARY_PATH.
+
+          Use the cloned repositories only to verify routing, find relevant ownership/docs/code context, or determine what missing information is needed. Do not perform broad code review.
+
+          Produce final JSON only, with this shape:
+          {
+            "summary": "One sentence summary of the issue.",
+            "category": "bug|enhancement|documentation|question|task|unknown",
+            "area": "short area name or unknown",
+            "confidence": "low|medium|high",
+            "labels": ["only labels explicitly allowed by repo_triage_config.labels.allowed"],
+            "extended_analysis_required": false,
+            "extended_analysis_repos": [],
+            "extended_analysis_reason": "Short note about what was checked.",
+            "needs_human_review": true,
+            "public_comment": "A concise, professional triage comment. Ask for missing information if needed. Do not claim a root cause unless evidence is strong."
+          }
+
+          Rules:
+          - Do not propose closing the issue.
+          - Do not assign users.
+          - Do not rewrite the issue body.
+          - Do not include private/internal-only details in public_comment.
+          - Keep public_comment focused on the issue reporter. Do not mention internal file paths unless directly useful.
+          PROMPT
+
+          sed -i.bak \
+            -e "s|ISSUE_CONTEXT_PATH|${RUNNER_TEMP}/issue-context.json|g" \
+            -e "s|INITIAL_PROPOSAL_PATH|${RUNNER_TEMP}/triage-proposal.json|g" \
+            -e "s|CROSS_REPOS_PATH|${RUNNER_TEMP}/cross-repos|g" \
+            -e "s|EXTENDED_SUMMARY_PATH|${RUNNER_TEMP}/extended-analysis-summary.json|g" \
+            "${RUNNER_TEMP}/extended-triage-prompt.md"
+
+          codex exec \
+            --sandbox read-only \
+            --ask-for-approval never \
+            --cd "${GITHUB_WORKSPACE}/caller-repo" \
+            --add-dir "${RUNNER_TEMP}/cross-repos" \
+            --output-schema "${GITHUB_WORKSPACE}/shared-github/schemas/issue-triage-result.schema.json" \
+            --output-last-message "${RUNNER_TEMP}/triage-proposal.json" \
+            "${model_args[@]}" \
+            "$(cat "${RUNNER_TEMP}/extended-triage-prompt.md")"
 
           cat "${RUNNER_TEMP}/triage-proposal.json"
 
@@ -130,4 +212,5 @@ jobs:
           path: |
             ${{ runner.temp }}/issue-context.json
             ${{ runner.temp }}/triage-proposal.json
+            ${{ runner.temp }}/extended-analysis-summary.json
           if-no-files-found: ignore

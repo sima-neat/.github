@@ -9,6 +9,9 @@
     "area",
     "confidence",
     "labels",
+    "extended_analysis_required",
+    "extended_analysis_repos",
+    "extended_analysis_reason",
     "needs_human_review",
     "public_comment"
   ],
@@ -47,6 +50,21 @@
         "maxLength": 100
       },
       "uniqueItems": true
+    },
+    "extended_analysis_required": {
+      "type": "boolean"
+    },
+    "extended_analysis_repos": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 100
+      },
+      "uniqueItems": true
+    },
+    "extended_analysis_reason": {
+      "type": "string",
+      "maxLength": 500
     },
     "needs_human_review": {
       "type": "boolean"

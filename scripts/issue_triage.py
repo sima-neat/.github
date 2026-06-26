@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -18,6 +19,11 @@ from typing import Any
 
 API_BASE = "https://api.github.com"
 TRIAGE_COMMENT_MARKER = "<!-- sima-neat-codex-issue-triage -->"
+DEFAULT_MAX_COMMENT_CHARS = 2400
+DEFAULT_TRIAGE_FILE_LIMIT_BYTES = 50_000
+DEFAULT_TRIAGE_TOTAL_LIMIT_BYTES = 200_000
+DEFAULT_TRIAGE_MAX_FILES = 20
+DEFAULT_MAX_EXTENDED_REPOS = 2
 
 
 def api_request(method: str, path: str, token: str, payload: dict[str, Any] | None = None) -> Any:
@@ -66,12 +72,47 @@ def read_json(path: Path) -> dict[str, Any]:
     return data
 
 
-def read_repo_triage_files(repo_path: Path, limit_bytes: int = 100_000) -> list[dict[str, str]]:
+def safe_child_path(root: Path, child: str) -> Path:
+    child_path = Path(child)
+    if child_path.is_absolute() or ".." in child_path.parts:
+        raise SystemExit(f"Unsafe path outside caller repository: {child!r}")
+    root_resolved = root.resolve()
+    resolved = (root_resolved / child_path).resolve()
+    if resolved != root_resolved and root_resolved not in resolved.parents:
+        raise SystemExit(f"Unsafe path outside caller repository: {child!r}")
+    return resolved
+
+
+def resolve_repo_triage_path(value: str) -> Path:
+    workspace = Path(os.environ.get("GITHUB_WORKSPACE", ".")).resolve()
+    caller_root = workspace / "caller-repo"
+    path = Path(value)
+    if path.parts and path.parts[0] == "caller-repo":
+        return safe_child_path(workspace, value)
+    return safe_child_path(caller_root, value)
+
+
+def config_int(config: dict[str, Any], key: str, default: int, minimum: int, maximum: int) -> int:
+    value = config.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return default
+    return min(max(value, minimum), maximum)
+
+
+def read_repo_triage_files(
+    repo_path: Path,
+    limit_bytes: int = DEFAULT_TRIAGE_FILE_LIMIT_BYTES,
+    max_files: int = DEFAULT_TRIAGE_MAX_FILES,
+    total_limit_bytes: int = DEFAULT_TRIAGE_TOTAL_LIMIT_BYTES,
+) -> list[dict[str, str]]:
     if not repo_path.exists() or not repo_path.is_dir():
         return []
 
     files: list[dict[str, str]] = []
+    total_bytes = 0
     for path in sorted(repo_path.rglob("*")):
+        if len(files) >= max_files or total_bytes >= total_limit_bytes:
+            break
         if not path.is_file():
             continue
         if path.name == "config.json":
@@ -82,7 +123,13 @@ def read_repo_triage_files(repo_path: Path, limit_bytes: int = 100_000) -> list[
         text = path.read_text(encoding="utf-8", errors="replace")
         if len(text.encode("utf-8")) > limit_bytes:
             text = text[:limit_bytes] + "\n\n[truncated]\n"
+        remaining = total_limit_bytes - total_bytes
+        encoded_len = len(text.encode("utf-8"))
+        if encoded_len > remaining:
+            text = text[:remaining] + "\n\n[truncated]\n"
+            encoded_len = len(text.encode("utf-8"))
         files.append({"path": rel, "content": text})
+        total_bytes += encoded_len
     return files
 
 
@@ -91,14 +138,25 @@ def collect_context(args: argparse.Namespace) -> None:
     repo = require_env("GITHUB_REPOSITORY")
     owner, name = repo.split("/", 1)
     issue_number = int(args.issue_number)
-    triage_path = Path(args.repo_triage_path)
+    triage_path = resolve_repo_triage_path(args.repo_triage_path)
 
     issue = api_request("GET", f"/repos/{owner}/{name}/issues/{issue_number}", token)
     all_comments = api_paginated(f"/repos/{owner}/{name}/issues/{issue_number}/comments", token)
     comments = all_comments[-100:]
     labels = api_paginated(f"/repos/{owner}/{name}/labels", token)
     config = read_json(triage_path / "config.json")
-    triage_files = read_repo_triage_files(triage_path)
+    triage_files = read_repo_triage_files(
+        triage_path,
+        limit_bytes=config_int(config, "triage_file_limit_bytes", DEFAULT_TRIAGE_FILE_LIMIT_BYTES, 1_000, 100_000),
+        max_files=config_int(config, "triage_max_files", DEFAULT_TRIAGE_MAX_FILES, 0, 50),
+        total_limit_bytes=config_int(
+            config,
+            "triage_total_limit_bytes",
+            DEFAULT_TRIAGE_TOTAL_LIMIT_BYTES,
+            10_000,
+            500_000,
+        ),
+    )
 
     context = {
         "repository": repo,
@@ -190,34 +248,45 @@ def clone_repo(repository: str, ref: str, destination: Path, token: str) -> None
     auth = base64.b64encode(f"x-access-token:{token}".encode("utf-8")).decode("ascii")
     env = os.environ.copy()
     env["GIT_TERMINAL_PROMPT"] = "0"
-    subprocess.run(
-        [
-            "git",
-            "-c",
-            f"http.https://github.com/.extraheader=AUTHORIZATION: basic {auth}",
-            "clone",
-            "--depth",
-            "1",
-            "--branch",
-            ref,
-            f"https://github.com/{repository}.git",
-            str(destination),
-        ],
-        check=True,
-        env=env,
-    )
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as git_config:
+        git_config.write("[http \"https://github.com/\"]\n")
+        git_config.write(f"\textraheader = AUTHORIZATION: basic {auth}\n")
+        git_config_path = git_config.name
+    os.chmod(git_config_path, 0o600)
+    env["GIT_CONFIG_GLOBAL"] = git_config_path
+    try:
+        subprocess.run(
+            [
+                "git",
+                "clone",
+                "--depth",
+                "1",
+                "--branch",
+                ref,
+                f"https://github.com/{repository}.git",
+                str(destination),
+            ],
+            check=True,
+            env=env,
+        )
+    finally:
+        Path(git_config_path).unlink(missing_ok=True)
 
 
 def prepare_extended_analysis(args: argparse.Namespace) -> None:
     token = require_env("GITHUB_TOKEN")
-    config = read_json(Path(args.repo_triage_path) / "config.json")
+    triage_path = resolve_repo_triage_path(args.repo_triage_path)
+    config = read_json(triage_path / "config.json")
     proposal = load_proposal(Path(args.proposal))
     allowed = cross_reference_config(config)
+    max_extended_repos = config_int(config, "max_extended_repos", DEFAULT_MAX_EXTENDED_REPOS, 0, 5)
     extended_required = proposal.get("extended_analysis_required") is True
     requested = string_list(proposal.get("extended_analysis_repos"), "extended_analysis_repos") if extended_required else []
     requested = list(dict.fromkeys(requested))
     disallowed = sorted(set(requested) - set(allowed))
-    selected = [repo for repo in requested if repo in allowed]
+    allowed_requested = [repo for repo in requested if repo in allowed]
+    selected = allowed_requested[:max_extended_repos]
+    skipped_due_to_limit = allowed_requested[max_extended_repos:]
 
     output_dir = Path(args.output_dir)
     cloned: list[dict[str, str]] = []
@@ -235,6 +304,8 @@ def prepare_extended_analysis(args: argparse.Namespace) -> None:
         "requested": requested,
         "cloned": cloned,
         "disallowed": disallowed,
+        "skipped_due_to_limit": skipped_due_to_limit,
+        "max_extended_repos": max_extended_repos,
         "run_extended_analysis": bool(cloned),
     }
     print(json.dumps(summary, indent=2))
@@ -244,6 +315,26 @@ def prepare_extended_analysis(args: argparse.Namespace) -> None:
         with open(github_output, "a", encoding="utf-8") as output:
             output.write(f"run_extended_analysis={'true' if cloned else 'false'}\n")
             output.write(f"summary={json.dumps(summary, separators=(',', ':'))}\n")
+
+
+def summarize_proposal(args: argparse.Namespace) -> None:
+    proposal = load_proposal(Path(args.proposal))
+    labels = string_list(proposal.get("labels"), "labels")
+    comment = proposal.get("public_comment") or proposal.get("comment") or ""
+    if not isinstance(comment, str):
+        comment = ""
+    summary = {
+        "summary": proposal.get("summary"),
+        "category": proposal.get("category"),
+        "area": proposal.get("area"),
+        "confidence": proposal.get("confidence"),
+        "labels": labels,
+        "extended_analysis_required": proposal.get("extended_analysis_required") is True,
+        "extended_analysis_repos": string_list(proposal.get("extended_analysis_repos"), "extended_analysis_repos"),
+        "needs_human_review": proposal.get("needs_human_review") is True,
+        "public_comment_chars": len(comment),
+    }
+    print(json.dumps(summary, indent=2))
 
 
 def format_triage_comment(comment: str) -> str:
@@ -265,7 +356,8 @@ def apply_proposal(args: argparse.Namespace) -> None:
     issue_number = int(args.issue_number)
     dry_run = args.dry_run.lower() == "true"
 
-    config = read_json(Path(args.repo_triage_path) / "config.json")
+    triage_path = resolve_repo_triage_path(args.repo_triage_path)
+    config = read_json(triage_path / "config.json")
     proposal = load_proposal(Path(args.proposal))
 
     automation = config.get("automation", {})
@@ -273,7 +365,7 @@ def apply_proposal(args: argparse.Namespace) -> None:
         automation = {}
     apply_labels = bool(automation.get("apply_labels", True))
     post_comment = bool(automation.get("post_comment", True))
-    max_comment_chars = int(config.get("max_comment_chars", 1200))
+    max_comment_chars = config_int(config, "max_comment_chars", DEFAULT_MAX_COMMENT_CHARS, 400, 5000)
 
     labels_cfg = config.get("labels", {})
     allowed_labels = set()
@@ -302,7 +394,7 @@ def apply_proposal(args: argparse.Namespace) -> None:
         "labels_skipped": disallowed,
         "post_comment": bool(comment and post_comment),
         "comment_mode": "update-or-create",
-        "comment": comment,
+        "comment_chars": len(comment),
     }
     print(json.dumps(summary, indent=2))
 
@@ -344,6 +436,10 @@ def main() -> None:
     prepare.add_argument("--proposal", required=True)
     prepare.add_argument("--output-dir", required=True)
     prepare.set_defaults(func=prepare_extended_analysis)
+
+    summarize = subparsers.add_parser("summarize-proposal")
+    summarize.add_argument("--proposal", required=True)
+    summarize.set_defaults(func=summarize_proposal)
 
     apply_cmd = subparsers.add_parser("apply-proposal")
     apply_cmd.add_argument("--issue-number", required=True)

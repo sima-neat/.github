@@ -37,7 +37,6 @@ jobs:
       issue_number: ${{ github.event.issue.number || inputs.issue_number }}
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
       repo_triage_path: .github/issue-triage
-    secrets: inherit
 ```
 
 The shared workflow expects a self-hosted runner with labels:
@@ -47,6 +46,9 @@ self-hosted, issue-triage
 ```
 
 That runner must have Codex CLI installed and authenticated for the runner user.
+Do not use `secrets: inherit` for this workflow. Pass only the optional
+`cross_repo_token` secret when triage needs to read private cross-reference
+repositories.
 
 ## Repo-Specific Triage Files
 
@@ -85,7 +87,11 @@ Example `config.json`:
       "path": "sdk"
     }
   ],
-  "max_comment_chars": 1200
+  "max_extended_repos": 2,
+  "triage_max_files": 20,
+  "triage_file_limit_bytes": 50000,
+  "triage_total_limit_bytes": 200000,
+  "max_comment_chars": 2400
 }
 ```
 
@@ -123,7 +129,13 @@ jobs:
 - Codex produces a JSON proposal only.
 - The deterministic runner script applies labels/comments.
 - Extended-analysis repositories must be explicitly allowlisted in repo config.
+- Extended analysis is capped to two repositories by default, with a hard maximum
+  of five.
+- Repo-local triage files are capped by file count, per-file bytes, and total
+  bytes to avoid accidentally feeding excessive context into the model.
 - The workflow does not close issues, assign users, set milestones, or edit issue
   bodies.
+- The workflow runs on the dedicated `self-hosted, issue-triage` runner labels
+  only; caller repositories cannot retarget it to arbitrary self-hosted runners.
 - If `dry_run` is true, the workflow uploads artifacts but does not mutate the
   issue.

@@ -106,6 +106,7 @@
         "core": "write",
         "docs": "write",
         "insight": "write",
+        "model-compiler": "write",
         "sdk": "write",
         "sima-cli": "write"
       }
@@ -122,6 +123,7 @@
         "core": "write",
         "docs": "write",
         "insight": "write",
+        "model-compiler": "write",
         "playbooks": "write",
         "sdk": "write",
         "sima-cli": "write"

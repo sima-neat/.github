@@ -68,6 +68,51 @@
         "kerrigan": "maintain"
       }
     },
+    "owners-core": {
+      "name": "owners-core",
+      "description": "Code owners for core",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "core": "write"
+      }
+    },
+    "owners-apps": {
+      "name": "owners-apps",
+      "description": "Code owners for apps",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "apps": "write"
+      }
+    },
+    "owners-llima": {
+      "name": "owners-llima",
+      "description": "Code owners for llima",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "llima": "write"
+      }
+    },
+    "owners-internals": {
+      "name": "owners-internals",
+      "description": "Code owners for internals",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "internals": "write"
+      }
+    },
+    "owners-insight": {
+      "name": "owners-insight",
+      "description": "Code owners for insight",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "insight": "write"
+      }
+    },
     "platform": {
       "name": "platform",
       "description": "Platform Development",

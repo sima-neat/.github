@@ -19,6 +19,7 @@
         "models": "maintain",
         "playbooks": "maintain",
         "qat": "maintain",
+        "roadmap": "maintain",
         "sima-cli": "maintain",
         "model-compiler": "maintain"
       }
@@ -63,6 +64,7 @@
         "docs": "maintain",
         "insight": "maintain",
         "qat": "maintain",
+        "roadmap": "maintain",
         "model-compiler": "maintain",
         "sdk": "maintain",
         "kerrigan": "maintain"

@@ -373,15 +373,24 @@ def release_target_candidates(release_version: str, repository: str | None) -> l
     return candidates
 
 
+def repository_release_scope(repository: str | None) -> str | None:
+    repo_name = (repository or "").rsplit("/", 1)[-1].strip().lower()
+    if repo_name in CALI_RELEASE_REPOSITORIES:
+        return repository
+    return None
+
+
 def collect_release_issues(
     items: list[dict[str, Any]],
     release_version: str,
     release_field_name: str,
     status_field_name: str,
     release_status_field_name: str,
+    repository_scope: str | None = None,
 ) -> tuple[list[ReleaseIssue], list[str]]:
     issues: list[ReleaseIssue] = []
     skipped: list[str] = []
+    normalized_repository_scope = (repository_scope or "").casefold()
 
     for item in items:
         values = {}
@@ -399,6 +408,9 @@ def collect_release_issues(
         if not content:
             skipped.append(f"{item['id']} has no content")
             continue
+        repo = (content.get("repository") or {}).get("nameWithOwner") or "(unknown repo)"
+        if normalized_repository_scope and repo.casefold() != normalized_repository_scope:
+            continue
         typename = content.get("__typename")
         if typename != "Issue":
             title = content.get("title") or "(untitled)"
@@ -406,7 +418,6 @@ def collect_release_issues(
             skipped.append(f"{typename}: {title} {url}")
             continue
 
-        repo = (content.get("repository") or {}).get("nameWithOwner") or "(unknown repo)"
         issues.append(
             ReleaseIssue(
                 item_id=item["id"],
@@ -431,6 +442,7 @@ def resolve_release_issues(
     release_field_name: str,
     status_field_name: str,
     release_status_field_name: str,
+    repository_scope: str | None = None,
 ) -> tuple[str, list[ReleaseIssue], list[str]]:
     matches: list[tuple[str, list[ReleaseIssue], list[str]]] = []
 
@@ -441,6 +453,7 @@ def resolve_release_issues(
             release_field_name=release_field_name,
             status_field_name=status_field_name,
             release_status_field_name=release_status_field_name,
+            repository_scope=repository_scope,
         )
         if issues:
             matches.append((release_target, issues, skipped))
@@ -535,19 +548,24 @@ def main() -> int:
     released_option_id = require_single_select_option(release_status_field, args.released_status_value)
 
     items = get_items(client, project["id"])
+    caller_repository = os.environ.get("GITHUB_REPOSITORY")
     release_targets = release_target_candidates(
         release_version=args.release_version,
-        repository=os.environ.get("GITHUB_REPOSITORY"),
+        repository=caller_repository,
     )
+    repository_scope = repository_release_scope(caller_repository)
     release_target, issues, skipped = resolve_release_issues(
         items=items,
         release_targets=release_targets,
         release_field_name=release_field.name,
         status_field_name=status_field.name,
         release_status_field_name=release_status_field.name,
+        repository_scope=repository_scope,
     )
     print(f"Target Release candidates: {', '.join(release_targets)}")
     print(f"Resolved Target Release: {release_target}")
+    if repository_scope:
+        print(f"Repository scope: {repository_scope}")
 
     if skipped:
         log_group(f"Skipped non-issue project items ({len(skipped)})")

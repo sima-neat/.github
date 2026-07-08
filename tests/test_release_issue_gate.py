@@ -1,21 +1,22 @@
 import unittest
 
 from scripts.release_issue_gate import (
+    repository_release_scope,
     release_target_candidates,
     resolve_release_issues,
 )
 
 
-def issue_item(target_release: str, number: int = 1) -> dict:
+def issue_item(target_release: str, number: int = 1, repository: str = "sima-neat/insight") -> dict:
     return {
         "id": f"item-{number}",
         "content": {
             "__typename": "Issue",
             "title": f"Issue {number}",
             "number": number,
-            "url": f"https://github.com/sima-neat/insight/issues/{number}",
+            "url": f"https://github.com/{repository}/issues/{number}",
             "state": "OPEN",
-            "repository": {"nameWithOwner": "sima-neat/insight"},
+            "repository": {"nameWithOwner": repository},
         },
         "fieldValues": {
             "nodes": [
@@ -58,6 +59,14 @@ class ReleaseIssueGateTest(unittest.TestCase):
             ["insight-0.0.5"],
         )
 
+    def test_cali_repositories_apply_repository_scope(self):
+        self.assertEqual(repository_release_scope("sima-neat/internals"), "sima-neat/internals")
+        self.assertEqual(repository_release_scope("sima-neat/apps"), "sima-neat/apps")
+
+    def test_non_cali_repositories_do_not_apply_repository_scope(self):
+        self.assertIsNone(repository_release_scope("sima-neat/insight"))
+        self.assertIsNone(repository_release_scope("sima-neat/sdk"))
+
     def test_resolves_repo_scoped_release_issue(self):
         target, issues, skipped = resolve_release_issues(
             items=[issue_item("insight-0.0.5")],
@@ -93,6 +102,42 @@ class ReleaseIssueGateTest(unittest.TestCase):
                 status_field_name="Status",
                 release_status_field_name="Release Status",
             )
+
+    def test_cali_release_scope_ignores_sibling_repository_issues(self):
+        target, issues, skipped = resolve_release_issues(
+            items=[
+                issue_item("cali-0.3.0", 1, "sima-neat/internals"),
+                issue_item("cali-0.3.0", 2, "sima-neat/apps"),
+            ],
+            release_targets=["cali-0.3.0", "0.3.0"],
+            release_field_name="Target Release",
+            status_field_name="Status",
+            release_status_field_name="Release Status",
+            repository_scope="sima-neat/internals",
+        )
+
+        self.assertEqual(target, "cali-0.3.0")
+        self.assertEqual([issue.repository for issue in issues], ["sima-neat/internals"])
+        self.assertEqual(skipped, [])
+
+    def test_non_cali_release_keeps_cross_repository_issues(self):
+        target, issues, skipped = resolve_release_issues(
+            items=[
+                issue_item("insight-0.0.5", 1, "sima-neat/insight"),
+                issue_item("insight-0.0.5", 2, "sima-neat/vulcan"),
+            ],
+            release_targets=["insight-0.0.5", "0.0.5"],
+            release_field_name="Target Release",
+            status_field_name="Status",
+            release_status_field_name="Release Status",
+        )
+
+        self.assertEqual(target, "insight-0.0.5")
+        self.assertEqual(
+            [issue.repository for issue in issues],
+            ["sima-neat/insight", "sima-neat/vulcan"],
+        )
+        self.assertEqual(skipped, [])
 
 
 if __name__ == "__main__":

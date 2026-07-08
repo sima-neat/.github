@@ -61,6 +61,9 @@ class ReleaseIssue:
     release_status: str | None
 
 
+CALI_RELEASE_REPOSITORIES = {"apps", "core", "internals", "llima"}
+
+
 class GitHubGraphQL:
     def __init__(self, token: str) -> None:
         self.token = token
@@ -348,6 +351,28 @@ def require_single_select_option(field: FieldRef, value: str) -> str:
     return option_id
 
 
+def release_target_candidates(release_version: str, repository: str | None) -> list[str]:
+    repo_name = (repository or "").rsplit("/", 1)[-1].strip().lower()
+    candidates: list[str] = []
+    release_prefixes = {"cali"}
+    if repo_name:
+        release_prefixes.add(repo_name)
+
+    def add(candidate: str) -> None:
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+
+    if any(release_version.startswith(f"{prefix}-") for prefix in release_prefixes):
+        add(release_version)
+    elif repo_name in CALI_RELEASE_REPOSITORIES:
+        add(f"cali-{release_version}")
+    elif repo_name:
+        add(f"{repo_name}-{release_version}")
+
+    add(release_version)
+    return candidates
+
+
 def collect_release_issues(
     items: list[dict[str, Any]],
     release_version: str,
@@ -398,6 +423,36 @@ def collect_release_issues(
     issues.sort(key=lambda issue: (issue.repository, issue.number))
     skipped.sort()
     return issues, skipped
+
+
+def resolve_release_issues(
+    items: list[dict[str, Any]],
+    release_targets: list[str],
+    release_field_name: str,
+    status_field_name: str,
+    release_status_field_name: str,
+) -> tuple[str, list[ReleaseIssue], list[str]]:
+    matches: list[tuple[str, list[ReleaseIssue], list[str]]] = []
+
+    for release_target in release_targets:
+        issues, skipped = collect_release_issues(
+            items=items,
+            release_version=release_target,
+            release_field_name=release_field_name,
+            status_field_name=status_field_name,
+            release_status_field_name=release_status_field_name,
+        )
+        if issues:
+            matches.append((release_target, issues, skipped))
+
+    if len(matches) > 1:
+        details = ", ".join(f"{target} ({len(issues)} issue(s))" for target, issues, _ in matches)
+        die(f"multiple Target Release candidates have matching issues: {details}")
+
+    if matches:
+        return matches[0]
+
+    return release_targets[0], [], []
 
 
 def print_issues(title: str, issues: list[ReleaseIssue]) -> None:
@@ -480,13 +535,19 @@ def main() -> int:
     released_option_id = require_single_select_option(release_status_field, args.released_status_value)
 
     items = get_items(client, project["id"])
-    issues, skipped = collect_release_issues(
-        items=items,
+    release_targets = release_target_candidates(
         release_version=args.release_version,
+        repository=os.environ.get("GITHUB_REPOSITORY"),
+    )
+    release_target, issues, skipped = resolve_release_issues(
+        items=items,
+        release_targets=release_targets,
         release_field_name=release_field.name,
         status_field_name=status_field.name,
         release_status_field_name=release_status_field.name,
     )
+    print(f"Target Release candidates: {', '.join(release_targets)}")
+    print(f"Resolved Target Release: {release_target}")
 
     if skipped:
         log_group(f"Skipped non-issue project items ({len(skipped)})")
@@ -510,18 +571,18 @@ def main() -> int:
         )
         die(
             f"no GitHub issues found in project {project['title']} with "
-            f"{args.release_field_name}={args.release_version}"
+            f"{args.release_field_name} in {release_targets}"
         )
 
     if blocking_issues:
         print(
-            f"Release issue validation failed for {args.release_version}. "
+            f"Release issue validation failed for {release_target}. "
             "No release branch, tag, or draft release should be created.",
             file=sys.stderr,
         )
         return 1
 
-    print(f"All {len(issues)} issue(s) targeted for {args.release_version} are {args.done_status_value}.")
+    print(f"All {len(issues)} issue(s) targeted for {release_target} are {args.done_status_value}.")
 
     log_group("Mark released project items")
     for issue in issues:
@@ -543,7 +604,7 @@ def main() -> int:
         print(f"- updated: {issue.repository}#{issue.number} {issue.url}")
     end_group()
 
-    print(f"Release issue validation passed for {args.release_version}.")
+    print(f"Release issue validation passed for {release_target}.")
     return 0
 
 

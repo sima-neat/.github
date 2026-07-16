@@ -13,8 +13,23 @@ on:
         required: false
         default: sdk-latest
         type: string
+      runner_profile:
+        description: Vulcan runner profile. Defaults to the current SDK runner behavior.
+        required: false
+        default: sdk
+        type: string
+      architecture:
+        description: Vulcan runner architecture label.
+        required: false
+        default: arm64
+        type: string
+      cache:
+        description: Optional generic cache label. For sdk, this overrides sdk_cache; for model-compiler, this selects the Model Compiler cache.
+        required: false
+        default: ""
+        type: string
       capacity:
-        description: Vulcan capacity label, such as cheaper, cheap, default, expensive, or most-expensive.
+        description: "Vulcan capacity label: cheaper, cheap, default, expensive, or most-expensive."
         required: false
         default: default
         type: string
@@ -81,15 +96,122 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   VULCAN_ENV: ${{ inputs.vulcan_env || vars.VULCAN_ENV || 'dev' }}
-  SDK_CACHE: ${{ inputs.sdk_cache }}
+  VULCAN_RUNNER_PROFILE: ${{ inputs.runner_profile }}
+  VULCAN_ARCHITECTURE: ${{ inputs.architecture }}
+  VULCAN_CACHE: ${{ inputs.cache || inputs.sdk_cache }}
+  SDK_CACHE: ${{ inputs.cache || inputs.sdk_cache }}
   VULCAN_CAPACITY: ${{ inputs.capacity }}
   VULCAN_WORKSPACE: /mnt/vulcan/workspace
+  MODEL_COMPILER_CACHE_ROOT: /mnt/vulcan-model-compiler
 
 jobs:
+  resolve-runner:
+    name: Resolve Vulcan runner labels
+    runs-on: ubuntu-latest
+    outputs:
+      labels: ${{ steps.resolve.outputs.labels }}
+      profile: ${{ steps.resolve.outputs.profile }}
+      architecture: ${{ steps.resolve.outputs.architecture }}
+      cache: ${{ steps.resolve.outputs.cache }}
+
+    steps:
+      - name: Resolve labels
+        id: resolve
+        shell: bash
+        env:
+          VULCAN_ENV: ${{ inputs.vulcan_env || vars.VULCAN_ENV || 'dev' }}
+          RUNNER_PROFILE: ${{ inputs.runner_profile }}
+          ARCHITECTURE: ${{ inputs.architecture }}
+          CAPACITY: ${{ inputs.capacity }}
+          SDK_CACHE: ${{ inputs.sdk_cache }}
+          CACHE: ${{ inputs.cache }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import sys
+
+          profile = os.environ["RUNNER_PROFILE"].strip().lower()
+          architecture = os.environ["ARCHITECTURE"].strip().lower()
+          capacity = os.environ["CAPACITY"].strip().lower()
+          vulcan_env = os.environ["VULCAN_ENV"].strip().lower()
+          sdk_cache = os.environ["SDK_CACHE"].strip().lower()
+          cache = os.environ["CACHE"].strip().lower()
+
+          allowed_profiles = {"sdk", "ubuntu", "model-compiler"}
+          allowed_architectures = {"arm64", "amd64"}
+          if profile not in allowed_profiles:
+              print(f"Unsupported runner_profile: {profile}", file=sys.stderr)
+              sys.exit(1)
+          if architecture not in allowed_architectures:
+              print(f"Unsupported architecture: {architecture}", file=sys.stderr)
+              sys.exit(1)
+          if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", capacity):
+              print(f"Unsupported capacity label: {capacity}", file=sys.stderr)
+              sys.exit(1)
+
+          effective_cache = cache
+          if profile == "sdk":
+              effective_cache = cache or sdk_cache
+              # Keep the SDK profile's default labels exactly compatible with
+              # existing Vulcan scaler behavior. The scaler can later map this
+              # legacy label set into the internal sdk profile without forcing
+              # every existing caller to update at once.
+              labels = [
+                  "self-hosted",
+                  "linux",
+                  architecture,
+                  f"vulcan-{vulcan_env}",
+                  "sdk-build",
+                  effective_cache,
+                  capacity,
+              ]
+          elif profile == "model-compiler":
+              labels = [
+                  "self-hosted",
+                  "linux",
+                  architecture,
+                  f"vulcan-{vulcan_env}",
+                  f"vulcan-profile-{profile}",
+                  f"vulcan-arch-{architecture}",
+                  f"vulcan-size-{capacity}",
+                  "model-compiler",
+                  capacity,
+              ]
+              if effective_cache:
+                  labels.append(effective_cache)
+          else:
+              labels = [
+                  "self-hosted",
+                  "linux",
+                  architecture,
+                  f"vulcan-{vulcan_env}",
+                  f"vulcan-profile-{profile}",
+                  f"vulcan-arch-{architecture}",
+                  f"vulcan-size-{capacity}",
+                  capacity,
+              ]
+
+          github_output = os.environ["GITHUB_OUTPUT"]
+          with open(github_output, "a", encoding="utf-8") as out:
+              out.write(f"labels={json.dumps(labels, separators=(',', ':'))}\n")
+              out.write(f"profile={profile}\n")
+              out.write(f"architecture={architecture}\n")
+              out.write(f"cache={effective_cache}\n")
+          PY
+
   build:
-    name: SDK build on Vulcan
+    name: Build on Vulcan
+    needs: resolve-runner
     environment: ${{ inputs.vulcan_env || vars.VULCAN_ENV || 'dev' }}
-    runs-on: [self-hosted, linux, arm64, "vulcan-${{ inputs.vulcan_env || vars.VULCAN_ENV || 'dev' }}", sdk-build, "${{ inputs.sdk_cache }}", "${{ inputs.capacity }}"]
+    runs-on: ${{ fromJSON(needs.resolve-runner.outputs.labels) }}
+    env:
+      VULCAN_RUNNER_PROFILE: ${{ needs.resolve-runner.outputs.profile }}
+      VULCAN_ARCHITECTURE: ${{ needs.resolve-runner.outputs.architecture }}
+      VULCAN_CACHE: ${{ needs.resolve-runner.outputs.cache }}
+      SDK_CACHE: ${{ needs.resolve-runner.outputs.cache }}
 
     steps:
       - name: Prepare Vulcan workspace
@@ -118,18 +240,44 @@ jobs:
         run: |
           set -euo pipefail
           echo "VULCAN_ENV=${VULCAN_ENV}"
+          echo "VULCAN_RUNNER_PROFILE=${VULCAN_RUNNER_PROFILE}"
+          echo "VULCAN_ARCHITECTURE=${VULCAN_ARCHITECTURE}"
+          echo "VULCAN_CACHE=${VULCAN_CACHE}"
           echo "SDK_CACHE=${SDK_CACHE}"
           echo "VULCAN_CAPACITY=${VULCAN_CAPACITY}"
           uname -a
           id
           df -h
-          docker version
-          docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
-          test -x /mnt/vulcan/bin/sima-cli
-          /mnt/vulcan/bin/sima-cli --version || /mnt/vulcan/bin/sima-cli version
+          if command -v docker >/dev/null 2>&1; then
+            docker version
+            docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+          else
+            echo "Docker is not installed on this runner profile."
+          fi
+          if [[ "${VULCAN_RUNNER_PROFILE}" == "sdk" ]]; then
+            test -x /mnt/vulcan/bin/sima-cli
+            /mnt/vulcan/bin/sima-cli --version || /mnt/vulcan/bin/sima-cli version
+          fi
+
+      - name: Configure Model Compiler environment
+        if: ${{ needs.resolve-runner.outputs.profile == 'model-compiler' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          venv="${MODEL_COMPILER_CACHE_ROOT}/sdk-extensions/model-compiler"
+          if [[ ! -f "${venv}/bin/activate" ]]; then
+            echo "Model Compiler virtual environment was not found at ${venv}." >&2
+            exit 1
+          fi
+          echo "VIRTUAL_ENV=${venv}" >> "${GITHUB_ENV}"
+          echo "${venv}/bin" >> "${GITHUB_PATH}"
+          "${venv}/bin/python" - <<'PY'
+          import sys
+          print(sys.executable)
+          PY
 
       - name: Ensure SDK container
-        if: ${{ inputs.ensure_sdk_container }}
+        if: ${{ needs.resolve-runner.outputs.profile == 'sdk' && inputs.ensure_sdk_container }}
         shell: bash
         env:
           SDK_SETUP_ARGS: ${{ inputs.sdk_setup_args }}

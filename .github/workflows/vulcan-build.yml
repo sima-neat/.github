@@ -142,19 +142,27 @@ jobs:
 
           allowed_profiles = {"sdk", "ubuntu", "model-compiler"}
           allowed_architectures = {"arm64", "amd64"}
+          label_pattern = re.compile(r"[a-z0-9][a-z0-9._-]*")
           if profile not in allowed_profiles:
               print(f"Unsupported runner_profile: {profile}", file=sys.stderr)
               sys.exit(1)
           if architecture not in allowed_architectures:
               print(f"Unsupported architecture: {architecture}", file=sys.stderr)
               sys.exit(1)
-          if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", capacity):
+          if not label_pattern.fullmatch(capacity):
               print(f"Unsupported capacity label: {capacity}", file=sys.stderr)
               sys.exit(1)
+          for name, value in (("sdk_cache", sdk_cache), ("cache", cache)):
+              if value and not label_pattern.fullmatch(value):
+                  print(f"Unsupported {name} label: {value}", file=sys.stderr)
+                  sys.exit(1)
 
           effective_cache = cache
           if profile == "sdk":
               effective_cache = cache or sdk_cache
+              if not effective_cache:
+                  print("SDK profile requires a cache label.", file=sys.stderr)
+                  sys.exit(1)
               # Keep the SDK profile's default labels exactly compatible with
               # existing Vulcan scaler behavior. The scaler can later map this
               # legacy label set into the internal sdk profile without forcing

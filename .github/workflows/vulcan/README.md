@@ -276,6 +276,12 @@ The AWS role trust policy must restrict GitHub OIDC subjects to the intended
 repositories, branches, and environments. The workflow is public, so AWS IAM is
 the enforcement point for who can publish to each bucket/prefix.
 
+The branch index is fetched with the workflow's `GITHUB_TOKEN`. Transient GitHub
+API `5xx` responses are retried with exponential backoff. If those retries are
+exhausted, the workflow uses an unauthenticated request only after verifying the
+caller repository is public; it never uses that fallback for private repositories
+or for authentication and authorization failures such as `401` or `403`.
+
 `branches.json` is generated from the caller repository's current active
 GitHub branches each time artifacts are published. It is stored at:
 

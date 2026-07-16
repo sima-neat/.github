@@ -41,6 +41,7 @@
         "qat": "write",
         "sdk": "write",
         "sima-cli": "write",
+        "sentinel": "write",
         "model-compiler": "write"
       }
     },

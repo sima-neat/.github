@@ -5,8 +5,8 @@
 </p>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./ga-dark.jpg" />
-  <source media="(prefers-color-scheme: light)" srcset="./ga-light.jpg" />
+  <source media="(prefers-color-scheme: dark)" srcset="./ga-dark.png" />
+  <source media="(prefers-color-scheme: light)" srcset="./ga-light.png" />
   <img src="./ga-light.jpg" alt="Neat Development Environment GA release" width="960" />
 </picture>
 

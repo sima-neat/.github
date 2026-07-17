@@ -264,6 +264,8 @@ Common inputs:
 | `aws_region` | `us-west-2` | AWS region for STS and S3. |
 | `environment_name` | `dev` | GitHub environment used for variables and approvals. |
 | `artifact_folder` | `artifacts` | Folder under repo/branch where files are uploaded. |
+| `source_branch` | caller branch | Optional branch used for the artifact path; use the upstream branch for `workflow_run` callers. |
+| `source_commit` | caller SHA | Optional commit SHA used for the artifact path; use the upstream SHA for `workflow_run` callers. |
 | `artifact_pattern` | required | GitHub Actions artifact name pattern to download. |
 | `artifact_glob` | `**/*` | File glob to publish from downloaded artifacts. |
 | `min_artifact_count` | `1` | Minimum matching file count required. |
@@ -333,3 +335,6 @@ jobs:
 ```
 
 If `latest_tag` is empty, the workflow writes the current short commit SHA.
+Use `source_branch` and `source_commit` when the workflow is called from a
+`workflow_run` that must publish the triggering run's branch and commit rather
+than the downstream workflow's default-branch context.

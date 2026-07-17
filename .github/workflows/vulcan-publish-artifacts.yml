@@ -28,6 +28,16 @@ on:
         required: false
         default: ""
         type: string
+      source_branch:
+        description: Optional source branch used for the artifact path. Empty uses the caller workflow branch.
+        required: false
+        default: ""
+        type: string
+      source_commit:
+        description: Optional source commit SHA used for the artifact path. Empty uses the caller workflow SHA.
+        required: false
+        default: ""
+        type: string
       artifact_pattern:
         description: actions/download-artifact pattern.
         required: true
@@ -95,6 +105,8 @@ jobs:
       AWS_REGION: ${{ inputs.aws_region }}
       ARTIFACT_BUCKET: ${{ inputs.bucket || vars.VULCAN_ARTIFACT_BUCKET }}
       ARTIFACT_FOLDER_INPUT: ${{ inputs.artifact_folder }}
+      SOURCE_BRANCH_INPUT: ${{ inputs.source_branch }}
+      SOURCE_COMMIT_INPUT: ${{ inputs.source_commit }}
       ARTIFACT_PATTERN: ${{ inputs.artifact_pattern }}
       ARTIFACT_GLOB: ${{ inputs.artifact_glob }}
       DOWNLOAD_PATH: ${{ inputs.download_path }}
@@ -456,12 +468,13 @@ jobs:
           del owner
           repo_name = clean_path_part(repo_name_from_context, "repository")
           branch_raw = (
-              os.environ.get("GITHUB_HEAD_REF")
+              os.environ.get("SOURCE_BRANCH_INPUT", "").strip()
+              or os.environ.get("GITHUB_HEAD_REF")
               or os.environ["GITHUB_REF_NAME"]
           )
           encoded_branch_key = branch_key(branch_raw)
           artifact_folder = artifact_folder_key(os.environ["ARTIFACT_FOLDER_INPUT"])
-          commit = os.environ["GITHUB_SHA"]
+          commit = os.environ.get("SOURCE_COMMIT_INPUT", "").strip() or os.environ["GITHUB_SHA"]
           short_commit = commit[:12]
 
           download_path = Path(os.environ["DOWNLOAD_PATH"])

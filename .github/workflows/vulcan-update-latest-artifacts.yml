@@ -28,6 +28,16 @@ on:
         required: false
         default: ""
         type: string
+      source_branch:
+        description: Optional source branch used for the artifact path. Empty uses the caller workflow branch.
+        required: false
+        default: ""
+        type: string
+      source_commit:
+        description: Optional source commit SHA used when latest_tag is empty. Empty uses the caller workflow SHA.
+        required: false
+        default: ""
+        type: string
       latest_tag:
         description: Value to write to latest.tag. Empty uses the current short commit SHA.
         required: false
@@ -62,6 +72,8 @@ jobs:
       AWS_REGION: ${{ inputs.aws_region }}
       ARTIFACT_BUCKET: ${{ inputs.bucket || vars.VULCAN_ARTIFACT_BUCKET }}
       ARTIFACT_FOLDER_INPUT: ${{ inputs.artifact_folder }}
+      SOURCE_BRANCH_INPUT: ${{ inputs.source_branch }}
+      SOURCE_COMMIT_INPUT: ${{ inputs.source_commit }}
       LATEST_TAG_INPUT: ${{ inputs.latest_tag }}
       VALIDATE_MANIFEST: ${{ inputs.validate_manifest }}
       SSE_KMS_KEY_ID: ${{ inputs.sse_kms_key_id || vars.VULCAN_ARTIFACT_KMS_KEY_ID }}
@@ -291,12 +303,14 @@ jobs:
           _, repo_name_from_context = github_repo.split("/", 1)
           repo_name = clean_path_part(repo_name_from_context, "repository")
           branch_raw = (
-              os.environ.get("GITHUB_HEAD_REF")
+              os.environ.get("SOURCE_BRANCH_INPUT", "").strip()
+              or os.environ.get("GITHUB_HEAD_REF")
               or os.environ["GITHUB_REF_NAME"]
           )
           encoded_branch_key = branch_key(branch_raw)
           artifact_folder = artifact_folder_key(os.environ["ARTIFACT_FOLDER_INPUT"])
-          latest_tag = os.environ["LATEST_TAG_INPUT"].strip() or os.environ["GITHUB_SHA"][:12]
+          source_commit = os.environ.get("SOURCE_COMMIT_INPUT", "").strip() or os.environ["GITHUB_SHA"]
+          latest_tag = os.environ["LATEST_TAG_INPUT"].strip() or source_commit[:12]
 
           out = Path("_vulcan/latest.tag")
           out.parent.mkdir(parents=True, exist_ok=True)

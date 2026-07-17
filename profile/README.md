@@ -7,7 +7,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./ga-dark.png" />
   <source media="(prefers-color-scheme: light)" srcset="./ga-light.png" />
-  <img src="./ga-light.jpg" alt="Neat Development Environment GA release" width="960" />
+  <img src="./ga-light.png" alt="Palette Neat 0.3.0 release highlights" width="960" />
 </picture>
 
 **SiMa.ai Neat** is an application-development framework for building and running AI applications on the SiMa.ai platform. It provides Python and C++ APIs for working with compiled model artifacts, composing application logic, and running AI pipelines on Modalix DevKits and SiMa.ai SoCs.

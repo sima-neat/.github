@@ -102,7 +102,7 @@ env:
   SDK_CACHE: ${{ inputs.cache || inputs.sdk_cache }}
   VULCAN_CAPACITY: ${{ inputs.capacity }}
   VULCAN_WORKSPACE: /mnt/vulcan/workspace
-  MODEL_COMPILER_CACHE_ROOT: /mnt/vulcan-model-compiler
+  MODEL_COMPILER_CACHE_ROOT: /mnt/model-compiler
 
 jobs:
   resolve-runner:
@@ -272,7 +272,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          venv="${MODEL_COMPILER_CACHE_ROOT}/sdk-extensions/model-compiler"
+          venv="${MODEL_COMPILER_CACHE_ROOT}"
           if [[ ! -f "${venv}/bin/activate" ]]; then
             echo "Model Compiler virtual environment was not found at ${venv}." >&2
             exit 1

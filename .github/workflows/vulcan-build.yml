@@ -182,9 +182,6 @@ jobs:
                   "linux",
                   architecture,
                   f"vulcan-{vulcan_env}",
-                  f"vulcan-profile-{profile}",
-                  f"vulcan-arch-{architecture}",
-                  f"vulcan-size-{capacity}",
                   "model-compiler",
                   capacity,
               ]
@@ -196,9 +193,7 @@ jobs:
                   "linux",
                   architecture,
                   f"vulcan-{vulcan_env}",
-                  f"vulcan-profile-{profile}",
-                  f"vulcan-arch-{architecture}",
-                  f"vulcan-size-{capacity}",
+                  "ubuntu",
                   capacity,
               ]
 

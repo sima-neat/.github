@@ -369,7 +369,8 @@ def release_target_candidates(release_version: str, repository: str | None) -> l
     elif repo_name:
         add(f"{repo_name}-{release_version}")
 
-    add(release_version)
+    if repo_name != "apps" and repo_name not in ICL_RELEASE_REPOSITORIES:
+        add(release_version)
     return candidates
 
 

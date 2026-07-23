@@ -47,10 +47,23 @@ class ReleaseIssueGateTest(unittest.TestCase):
             ["insight-0.0.5", "0.0.5"],
         )
 
-    def test_cali_candidates_prefer_cali_release(self):
+    def test_apps_candidates_prefer_apps_release(self):
         self.assertEqual(
-            release_target_candidates("0.3.0", "sima-neat/core"),
-            ["cali-0.3.0", "0.3.0"],
+            release_target_candidates("0.4.0", "sima-neat/apps"),
+            ["apps-0.4.0", "0.4.0"],
+        )
+
+    def test_icl_candidates_prefer_icl_release(self):
+        for repository in ("core", "internals", "llima"):
+            with self.subTest(repository=repository):
+                self.assertEqual(
+                    release_target_candidates("0.4.0", f"sima-neat/{repository}"),
+                    ["icl-0.4.0", "0.4.0"],
+                )
+
+        self.assertEqual(
+            release_target_candidates("icl-0.4.0", "sima-neat/core"),
+            ["icl-0.4.0"],
         )
 
     def test_candidates_deduplicate_already_prefixed_release(self):
@@ -59,11 +72,13 @@ class ReleaseIssueGateTest(unittest.TestCase):
             ["insight-0.0.5"],
         )
 
-    def test_cali_repositories_apply_repository_scope(self):
+    def test_icl_repositories_apply_repository_scope(self):
         self.assertEqual(repository_release_scope("sima-neat/internals"), "sima-neat/internals")
-        self.assertEqual(repository_release_scope("sima-neat/apps"), "sima-neat/apps")
+        self.assertEqual(repository_release_scope("sima-neat/core"), "sima-neat/core")
+        self.assertEqual(repository_release_scope("sima-neat/llima"), "sima-neat/llima")
 
-    def test_non_cali_repositories_do_not_apply_repository_scope(self):
+    def test_non_icl_repositories_do_not_apply_repository_scope(self):
+        self.assertIsNone(repository_release_scope("sima-neat/apps"))
         self.assertIsNone(repository_release_scope("sima-neat/insight"))
         self.assertIsNone(repository_release_scope("sima-neat/sdk"))
 
@@ -103,24 +118,24 @@ class ReleaseIssueGateTest(unittest.TestCase):
                 release_status_field_name="Release Status",
             )
 
-    def test_cali_release_scope_ignores_sibling_repository_issues(self):
+    def test_icl_release_scope_ignores_sibling_repository_issues(self):
         target, issues, skipped = resolve_release_issues(
             items=[
-                issue_item("cali-0.3.0", 1, "sima-neat/internals"),
-                issue_item("cali-0.3.0", 2, "sima-neat/apps"),
+                issue_item("icl-0.4.0", 1, "sima-neat/internals"),
+                issue_item("icl-0.4.0", 2, "sima-neat/core"),
             ],
-            release_targets=["cali-0.3.0", "0.3.0"],
+            release_targets=["icl-0.4.0", "0.4.0"],
             release_field_name="Target Release",
             status_field_name="Status",
             release_status_field_name="Release Status",
             repository_scope="sima-neat/internals",
         )
 
-        self.assertEqual(target, "cali-0.3.0")
+        self.assertEqual(target, "icl-0.4.0")
         self.assertEqual([issue.repository for issue in issues], ["sima-neat/internals"])
         self.assertEqual(skipped, [])
 
-    def test_non_cali_release_keeps_cross_repository_issues(self):
+    def test_non_icl_release_keeps_cross_repository_issues(self):
         target, issues, skipped = resolve_release_issues(
             items=[
                 issue_item("insight-0.0.5", 1, "sima-neat/insight"),

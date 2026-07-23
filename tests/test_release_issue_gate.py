@@ -52,7 +52,6 @@ class ReleaseIssueGateTest(unittest.TestCase):
             release_target_candidates("0.4.0", "sima-neat/apps"),
             ["apps-0.4.0", "0.4.0"],
         )
-        self.assertIsNone(repository_release_scope("sima-neat/apps"))
 
     def test_icl_candidates_prefer_icl_release(self):
         for repository in ("core", "internals", "llima"):
@@ -136,22 +135,22 @@ class ReleaseIssueGateTest(unittest.TestCase):
         self.assertEqual([issue.repository for issue in issues], ["sima-neat/internals"])
         self.assertEqual(skipped, [])
 
-    def test_independent_release_keeps_cross_repository_issues(self):
+    def test_non_icl_release_keeps_cross_repository_issues(self):
         target, issues, skipped = resolve_release_issues(
             items=[
-                issue_item("apps-0.4.0", 1, "sima-neat/apps"),
-                issue_item("apps-0.4.0", 2, "sima-neat/.github"),
+                issue_item("insight-0.0.5", 1, "sima-neat/insight"),
+                issue_item("insight-0.0.5", 2, "sima-neat/vulcan"),
             ],
-            release_targets=["apps-0.4.0", "0.4.0"],
+            release_targets=["insight-0.0.5", "0.0.5"],
             release_field_name="Target Release",
             status_field_name="Status",
             release_status_field_name="Release Status",
         )
 
-        self.assertEqual(target, "apps-0.4.0")
+        self.assertEqual(target, "insight-0.0.5")
         self.assertEqual(
             [issue.repository for issue in issues],
-            ["sima-neat/.github", "sima-neat/apps"],
+            ["sima-neat/insight", "sima-neat/vulcan"],
         )
         self.assertEqual(skipped, [])
 

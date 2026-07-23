@@ -61,7 +61,7 @@ class ReleaseIssue:
     release_status: str | None
 
 
-CALI_RELEASE_REPOSITORIES = {"apps", "core", "internals", "llima"}
+ICL_RELEASE_REPOSITORIES = {"core", "internals", "llima"}
 
 
 class GitHubGraphQL:
@@ -354,7 +354,7 @@ def require_single_select_option(field: FieldRef, value: str) -> str:
 def release_target_candidates(release_version: str, repository: str | None) -> list[str]:
     repo_name = (repository or "").rsplit("/", 1)[-1].strip().lower()
     candidates: list[str] = []
-    release_prefixes = {"cali"}
+    release_prefixes = {"icl"}
     if repo_name:
         release_prefixes.add(repo_name)
 
@@ -364,8 +364,8 @@ def release_target_candidates(release_version: str, repository: str | None) -> l
 
     if any(release_version.startswith(f"{prefix}-") for prefix in release_prefixes):
         add(release_version)
-    elif repo_name in CALI_RELEASE_REPOSITORIES:
-        add(f"cali-{release_version}")
+    elif repo_name in ICL_RELEASE_REPOSITORIES:
+        add(f"icl-{release_version}")
     elif repo_name:
         add(f"{repo_name}-{release_version}")
 
@@ -375,7 +375,7 @@ def release_target_candidates(release_version: str, repository: str | None) -> l
 
 def repository_release_scope(repository: str | None) -> str | None:
     repo_name = (repository or "").rsplit("/", 1)[-1].strip().lower()
-    if repo_name in CALI_RELEASE_REPOSITORIES:
+    if repo_name in ICL_RELEASE_REPOSITORIES:
         return repository
     return None
 

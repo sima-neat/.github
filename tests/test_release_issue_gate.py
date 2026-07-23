@@ -50,7 +50,7 @@ class ReleaseIssueGateTest(unittest.TestCase):
     def test_apps_candidates_prefer_apps_release(self):
         self.assertEqual(
             release_target_candidates("0.4.0", "sima-neat/apps"),
-            ["apps-0.4.0", "0.4.0"],
+            ["apps-0.4.0"],
         )
 
     def test_icl_candidates_prefer_icl_release(self):
@@ -58,7 +58,7 @@ class ReleaseIssueGateTest(unittest.TestCase):
             with self.subTest(repository=repository):
                 self.assertEqual(
                     release_target_candidates("0.4.0", f"sima-neat/{repository}"),
-                    ["icl-0.4.0", "0.4.0"],
+                    ["icl-0.4.0"],
                 )
 
         self.assertEqual(

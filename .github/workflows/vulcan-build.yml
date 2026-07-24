@@ -251,11 +251,11 @@ jobs:
           uname -a
           id
           df -h
-          if command -v docker >/dev/null 2>&1; then
+          if [[ "${VULCAN_RUNNER_PROFILE}" != "sdk" ]] && ! docker info >/dev/null 2>&1; then
+            echo "Docker daemon is unavailable; it is optional for the ${VULCAN_RUNNER_PROFILE} runner profile."
+          else
             docker version
             docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
-          else
-            echo "Docker is not installed on this runner profile."
           fi
           if [[ "${VULCAN_RUNNER_PROFILE}" == "sdk" ]]; then
             test -x /mnt/vulcan/bin/sima-cli

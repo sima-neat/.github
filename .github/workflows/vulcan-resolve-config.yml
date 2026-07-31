@@ -106,6 +106,27 @@ on:
       apps_portal_cloudfront_distribution_id:
         description: Apps portal CloudFront distribution ID.
         value: ${{ jobs.resolve.outputs.apps_portal_cloudfront_distribution_id }}
+      compiler_cache_bucket:
+        description: Private compiler-cache S3 bucket.
+        value: ${{ jobs.resolve.outputs.compiler_cache_bucket }}
+      compiler_cache_aws_region:
+        description: AWS region containing the compiler cache.
+        value: ${{ jobs.resolve.outputs.compiler_cache_aws_region }}
+      compiler_cache_key_prefix:
+        description: Top-level S3 key prefix reserved for compiler cache objects.
+        value: ${{ jobs.resolve.outputs.compiler_cache_key_prefix }}
+      compiler_cache_reader_role_arn:
+        description: GitHub OIDC role for read-only compiler-cache access.
+        value: ${{ jobs.resolve.outputs.compiler_cache_reader_role_arn }}
+      compiler_cache_writer_role_arn:
+        description: GitHub OIDC role for trusted compiler-cache writes.
+        value: ${{ jobs.resolve.outputs.compiler_cache_writer_role_arn }}
+      compiler_cache_branch_writer_role_arn:
+        description: GitHub OIDC role for feature-branch compiler-cache writes.
+        value: ${{ jobs.resolve.outputs.compiler_cache_branch_writer_role_arn }}
+      compiler_cache_cleanup_role_arn:
+        description: GitHub OIDC role for deleting feature-branch compiler-cache prefixes.
+        value: ${{ jobs.resolve.outputs.compiler_cache_cleanup_role_arn }}
 
 permissions:
   contents: read
@@ -149,6 +170,13 @@ jobs:
       apps_portal_publisher_role_arn: ${{ steps.config.outputs.apps_portal_publisher_role_arn }}
       apps_portal_kms_key_id: ${{ steps.config.outputs.apps_portal_kms_key_id }}
       apps_portal_cloudfront_distribution_id: ${{ steps.config.outputs.apps_portal_cloudfront_distribution_id }}
+      compiler_cache_bucket: ${{ steps.config.outputs.compiler_cache_bucket }}
+      compiler_cache_aws_region: ${{ steps.config.outputs.compiler_cache_aws_region }}
+      compiler_cache_key_prefix: ${{ steps.config.outputs.compiler_cache_key_prefix }}
+      compiler_cache_reader_role_arn: ${{ steps.config.outputs.compiler_cache_reader_role_arn }}
+      compiler_cache_writer_role_arn: ${{ steps.config.outputs.compiler_cache_writer_role_arn }}
+      compiler_cache_branch_writer_role_arn: ${{ steps.config.outputs.compiler_cache_branch_writer_role_arn }}
+      compiler_cache_cleanup_role_arn: ${{ steps.config.outputs.compiler_cache_cleanup_role_arn }}
     steps:
       - name: Resolve config location
         id: location
@@ -339,6 +367,13 @@ jobs:
           emit apps_portal_publisher_role_arn '.apps_portal.publisher_role_arn'
           emit apps_portal_kms_key_id '.apps_portal.kms_key_id'
           emit apps_portal_cloudfront_distribution_id '.apps_portal.cloudfront_distribution_id'
+          emit compiler_cache_bucket '.compiler_cache.bucket'
+          emit compiler_cache_aws_region '.compiler_cache.aws_region' us-west-2
+          emit compiler_cache_key_prefix '.compiler_cache.key_prefix'
+          emit compiler_cache_reader_role_arn '.compiler_cache.reader_role_arn'
+          emit compiler_cache_writer_role_arn '.compiler_cache.writer_role_arn'
+          emit compiler_cache_branch_writer_role_arn '.compiler_cache.branch_writer_role_arn'
+          emit compiler_cache_cleanup_role_arn '.compiler_cache.cleanup_role_arn'
 
           for required in aws_region artifact_bucket artifact_publisher_role_arn; do
             if ! grep -q "^${required}=." "${GITHUB_OUTPUT}"; then

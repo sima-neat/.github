@@ -251,27 +251,35 @@ jobs:
       VULCAN_ARCHITECTURE: ${{ needs.resolve-runner.outputs.architecture }}
       VULCAN_CACHE: ${{ needs.resolve-runner.outputs.cache }}
       SDK_CACHE: ${{ needs.resolve-runner.outputs.cache }}
-      SCCACHE_BUCKET: ${{ inputs.compiler_cache_bucket }}
-      SCCACHE_REGION: ${{ inputs.compiler_cache_aws_region }}
-      SCCACHE_S3_KEY_PREFIX: ${{ inputs.compiler_cache_key_prefix }}
-      SCCACHE_S3_RW_MODE: ${{ inputs.compiler_cache_rw_mode }}
 
     steps:
       - name: Validate compiler cache configuration
         if: ${{ inputs.compiler_cache_role_arn != '' }}
         shell: bash
+        env:
+          COMPILER_CACHE_BUCKET: ${{ inputs.compiler_cache_bucket }}
+          COMPILER_CACHE_REGION: ${{ inputs.compiler_cache_aws_region }}
+          COMPILER_CACHE_KEY_PREFIX: ${{ inputs.compiler_cache_key_prefix }}
+          COMPILER_CACHE_RW_MODE: ${{ inputs.compiler_cache_rw_mode }}
         run: |
           set -euo pipefail
-          test -n "${SCCACHE_BUCKET}"
-          test -n "${SCCACHE_REGION}"
-          test -n "${SCCACHE_S3_KEY_PREFIX}"
-          case "${SCCACHE_S3_RW_MODE}" in
+          test -n "${COMPILER_CACHE_BUCKET}"
+          test -n "${COMPILER_CACHE_REGION}"
+          test -n "${COMPILER_CACHE_KEY_PREFIX}"
+          case "${COMPILER_CACHE_RW_MODE}" in
             READ_ONLY|READ_WRITE) ;;
             *)
-              echo "Unsupported compiler_cache_rw_mode: ${SCCACHE_S3_RW_MODE}" >&2
+              echo "Unsupported compiler_cache_rw_mode: ${COMPILER_CACHE_RW_MODE}" >&2
               exit 1
               ;;
           esac
+
+          {
+            printf 'SCCACHE_BUCKET=%s\n' "${COMPILER_CACHE_BUCKET}"
+            printf 'SCCACHE_REGION=%s\n' "${COMPILER_CACHE_REGION}"
+            printf 'SCCACHE_S3_KEY_PREFIX=%s\n' "${COMPILER_CACHE_KEY_PREFIX}"
+            printf 'SCCACHE_S3_RW_MODE=%s\n' "${COMPILER_CACHE_RW_MODE}"
+          } >> "${GITHUB_ENV}"
 
       - name: Configure compiler cache AWS credentials
         if: ${{ inputs.compiler_cache_role_arn != '' }}
@@ -282,7 +290,7 @@ jobs:
           role-session-name: vulcan-compiler-cache-${{ github.run_id }}
 
       - name: Seed branch compiler cache
-        if: ${{ inputs.compiler_cache_seed_key_prefix != '' && inputs.compiler_cache_seed_key_prefix != inputs.compiler_cache_key_prefix }}
+        if: ${{ inputs.compiler_cache_role_arn != '' && inputs.compiler_cache_seed_key_prefix != '' && inputs.compiler_cache_seed_key_prefix != inputs.compiler_cache_key_prefix }}
         shell: bash
         env:
           SCCACHE_SEED_KEY_PREFIX: ${{ inputs.compiler_cache_seed_key_prefix }}

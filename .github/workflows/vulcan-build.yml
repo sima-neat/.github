@@ -88,9 +88,40 @@ on:
         required: false
         default: 7
         type: number
+      use_github_environment:
+        description: Attach the build job to the Vulcan GitHub Environment. Disable only when ref-bound OIDC credentials are required.
+        required: false
+        default: true
+        type: boolean
+      compiler_cache_bucket:
+        description: Optional private compiler-cache S3 bucket.
+        required: false
+        default: ""
+        type: string
+      compiler_cache_aws_region:
+        description: AWS region containing the compiler cache.
+        required: false
+        default: us-west-2
+        type: string
+      compiler_cache_key_prefix:
+        description: Top-level S3 key prefix reserved for compiler cache objects.
+        required: false
+        default: ""
+        type: string
+      compiler_cache_role_arn:
+        description: Optional GitHub OIDC role for compiler-cache access.
+        required: false
+        default: ""
+        type: string
+      compiler_cache_rw_mode:
+        description: Compiler-cache S3 mode, READ_ONLY or READ_WRITE.
+        required: false
+        default: READ_ONLY
+        type: string
 
 permissions:
   contents: read
+  id-token: write
   packages: read
 
 env:
@@ -208,15 +239,43 @@ jobs:
   build:
     name: Build on Vulcan
     needs: resolve-runner
-    environment: ${{ inputs.vulcan_env || vars.VULCAN_ENV || 'dev' }}
+    environment: ${{ inputs.use_github_environment && (inputs.vulcan_env || vars.VULCAN_ENV || 'dev') || '' }}
     runs-on: ${{ fromJSON(needs.resolve-runner.outputs.labels) }}
     env:
       VULCAN_RUNNER_PROFILE: ${{ needs.resolve-runner.outputs.profile }}
       VULCAN_ARCHITECTURE: ${{ needs.resolve-runner.outputs.architecture }}
       VULCAN_CACHE: ${{ needs.resolve-runner.outputs.cache }}
       SDK_CACHE: ${{ needs.resolve-runner.outputs.cache }}
+      SCCACHE_BUCKET: ${{ inputs.compiler_cache_bucket }}
+      SCCACHE_REGION: ${{ inputs.compiler_cache_aws_region }}
+      SCCACHE_S3_KEY_PREFIX: ${{ inputs.compiler_cache_key_prefix }}
+      SCCACHE_S3_RW_MODE: ${{ inputs.compiler_cache_rw_mode }}
 
     steps:
+      - name: Validate compiler cache configuration
+        if: ${{ inputs.compiler_cache_role_arn != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SCCACHE_BUCKET}"
+          test -n "${SCCACHE_REGION}"
+          test -n "${SCCACHE_S3_KEY_PREFIX}"
+          case "${SCCACHE_S3_RW_MODE}" in
+            READ_ONLY|READ_WRITE) ;;
+            *)
+              echo "Unsupported compiler_cache_rw_mode: ${SCCACHE_S3_RW_MODE}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Configure compiler cache AWS credentials
+        if: ${{ inputs.compiler_cache_role_arn != '' }}
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ inputs.compiler_cache_aws_region }}
+          role-to-assume: ${{ inputs.compiler_cache_role_arn }}
+          role-session-name: vulcan-compiler-cache-${{ github.run_id }}
+
       - name: Prepare Vulcan workspace
         shell: bash
         run: |

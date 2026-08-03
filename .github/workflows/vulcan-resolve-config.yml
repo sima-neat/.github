@@ -55,6 +55,9 @@ on:
       artifact_publisher_role_arn:
         description: Artifact publisher role ARN.
         value: ${{ jobs.resolve.outputs.artifact_publisher_role_arn }}
+      artifact_namespace:
+        description: Immutable artifact root registered for the calling repository.
+        value: ${{ jobs.resolve.outputs.artifact_namespace }}
       artifact_kms_key_id:
         description: Artifact KMS key ID or alias.
         value: ${{ jobs.resolve.outputs.artifact_kms_key_id }}
@@ -153,6 +156,7 @@ jobs:
       artifact_base_url: ${{ steps.config.outputs.artifact_base_url }}
       artifact_bucket: ${{ steps.config.outputs.artifact_bucket }}
       artifact_publisher_role_arn: ${{ steps.config.outputs.artifact_publisher_role_arn }}
+      artifact_namespace: ${{ steps.config.outputs.artifact_namespace }}
       artifact_kms_key_id: ${{ steps.config.outputs.artifact_kms_key_id }}
       artifact_cloudfront_distribution_id: ${{ steps.config.outputs.artifact_cloudfront_distribution_id }}
       docs_base_url: ${{ steps.config.outputs.docs_base_url }}
@@ -284,6 +288,7 @@ jobs:
           INPUT_CONFIG_S3_URI: ${{ steps.location.outputs.config_s3_uri }}
           INPUT_CONFIG_READER_ROLE_ARN: ${{ steps.location.outputs.config_reader_role_arn }}
           INPUT_SDK_CHANNEL: ${{ steps.sdk_manifest.outputs.sdk_channel }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -337,6 +342,18 @@ jobs:
               ;;
           esac
 
+          source_owner="${SOURCE_REPOSITORY%%/*}"
+          source_name="${SOURCE_REPOSITORY#*/}"
+          artifact_publisher_role_arn="$(jq -r --arg owner "${source_owner}" '.artifacts.publisher_roles[$owner] // empty' "${config_file}")"
+          artifact_namespace="$(jq -r --arg repository "${SOURCE_REPOSITORY}" '.artifacts.namespace_registry[$repository] // empty' "${config_file}")"
+          if [[ "${source_owner}" == "sima-neat" ]]; then
+            artifact_publisher_role_arn="${artifact_publisher_role_arn:-$(jq -r '.artifacts.publisher_role_arn // empty' "${config_file}")}"
+            artifact_namespace="${artifact_namespace:-${source_name}}"
+          elif [[ -z "${artifact_publisher_role_arn}" || -z "${artifact_namespace}" ]]; then
+            echo "Repository '${SOURCE_REPOSITORY}' is not registered for Vulcan artifact publishing." >&2
+            exit 1
+          fi
+
           # shellcheck disable=SC2129
           printf 'vulcan_env=%s\n' "${env_name}" >> "${GITHUB_OUTPUT}"
           printf 'config_s3_uri=%s\n' "${config_s3_uri}" >> "${GITHUB_OUTPUT}"
@@ -349,7 +366,8 @@ jobs:
           emit sysdoc_capacity '.runner.sysdoc_capacity' cheap
           emit artifact_base_url '.artifacts.base_url'
           emit artifact_bucket '.artifacts.bucket'
-          emit artifact_publisher_role_arn '.artifacts.publisher_role_arn'
+          printf 'artifact_publisher_role_arn=%s\n' "${artifact_publisher_role_arn}" >> "${GITHUB_OUTPUT}"
+          printf 'artifact_namespace=%s\n' "${artifact_namespace}" >> "${GITHUB_OUTPUT}"
           emit artifact_kms_key_id '.artifacts.kms_key_id'
           emit artifact_cloudfront_distribution_id '.artifacts.cloudfront_distribution_id'
           emit docs_base_url '.docs.base_url'

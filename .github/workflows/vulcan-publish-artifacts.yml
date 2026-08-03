@@ -13,6 +13,11 @@ on:
         required: false
         default: ""
         type: string
+      artifact_namespace:
+        description: Optional registered artifact root. When set, it must match the immutable namespace registry assignment.
+        required: false
+        default: ""
+        type: string
       aws_region:
         description: AWS region for S3 and STS.
         required: false
@@ -105,6 +110,7 @@ jobs:
       AWS_REGION: ${{ inputs.aws_region }}
       ARTIFACT_BUCKET: ${{ inputs.bucket || vars.VULCAN_ARTIFACT_BUCKET }}
       ARTIFACT_FOLDER_INPUT: ${{ inputs.artifact_folder }}
+      ARTIFACT_NAMESPACE_INPUT: ${{ inputs.artifact_namespace }}
       SOURCE_BRANCH_INPUT: ${{ inputs.source_branch }}
       SOURCE_COMMIT_INPUT: ${{ inputs.source_commit }}
       ARTIFACT_PATTERN: ${{ inputs.artifact_pattern }}
@@ -132,6 +138,7 @@ jobs:
           VAR_CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.VULCAN_ARTIFACT_CLOUDFRONT_DISTRIBUTION_ID }}
           VAR_CONFIG_S3_URI: ${{ vars.VULCAN_CONFIG_S3_URI }}
           VAR_CONFIG_READER_ROLE_ARN: ${{ vars.VULCAN_CONFIG_READER_ROLE_ARN }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -164,6 +171,9 @@ jobs:
           cloudfront_distribution_id="${INPUT_CLOUDFRONT_DISTRIBUTION_ID:-${VAR_CLOUDFRONT_DISTRIBUTION_ID:-}}"
           needs_config=false
           if [[ -z "${bucket}" || -z "${role_to_assume}" || -z "${sse_kms_key_id}" || -z "${cloudfront_distribution_id}" ]]; then
+            needs_config=true
+          fi
+          if [[ "${SOURCE_REPOSITORY%%/*}" != "sima-neat" ]]; then
             needs_config=true
           fi
 
@@ -205,6 +215,9 @@ jobs:
           EXISTING_ROLE_TO_ASSUME: ${{ steps.config-location.outputs.role_to_assume }}
           EXISTING_SSE_KMS_KEY_ID: ${{ steps.config-location.outputs.sse_kms_key_id }}
           EXISTING_CLOUDFRONT_DISTRIBUTION_ID: ${{ steps.config-location.outputs.cloudfront_distribution_id }}
+          INPUT_ROLE_TO_ASSUME: ${{ inputs.role_to_assume }}
+          INPUT_ARTIFACT_NAMESPACE: ${{ inputs.artifact_namespace }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -213,6 +226,11 @@ jobs:
           role_to_assume="${EXISTING_ROLE_TO_ASSUME}"
           sse_kms_key_id="${EXISTING_SSE_KMS_KEY_ID}"
           cloudfront_distribution_id="${EXISTING_CLOUDFRONT_DISTRIBUTION_ID}"
+          source_owner="${SOURCE_REPOSITORY%%/*}"
+          source_name="${SOURCE_REPOSITORY#*/}"
+          artifact_namespace=""
+          owner_role_to_assume=""
+          legacy_role_to_assume=""
 
           if [[ "${NEEDS_CONFIG}" == "true" ]]; then
             config_file="$(mktemp)"
@@ -231,9 +249,30 @@ jobs:
 
             aws_region="${aws_region:-$(jq -r '.aws_region // empty' "${config_file}")}"
             bucket="${bucket:-$(jq -r '.artifacts.bucket // empty' "${config_file}")}"
-            role_to_assume="${role_to_assume:-$(jq -r '.artifacts.publisher_role_arn // empty' "${config_file}")}"
+            owner_role_to_assume="$(jq -r --arg owner "${source_owner}" '.artifacts.publisher_roles[$owner] // empty' "${config_file}")"
+            legacy_role_to_assume="$(jq -r '.artifacts.publisher_role_arn // empty' "${config_file}")"
+            artifact_namespace="$(jq -r --arg repository "${SOURCE_REPOSITORY}" '.artifacts.namespace_registry[$repository] // empty' "${config_file}")"
             sse_kms_key_id="${sse_kms_key_id:-$(jq -r '.artifacts.kms_key_id // empty' "${config_file}")}"
             cloudfront_distribution_id="${cloudfront_distribution_id:-$(jq -r '.artifacts.cloudfront_distribution_id // empty' "${config_file}")}"
+          fi
+
+          if [[ "${source_owner}" == "sima-neat" ]]; then
+            role_to_assume="${role_to_assume:-${owner_role_to_assume:-${legacy_role_to_assume}}}"
+            artifact_namespace="${artifact_namespace:-${source_name}}"
+          else
+            if [[ -z "${artifact_namespace}" || -z "${owner_role_to_assume}" ]]; then
+              echo "Repository '${SOURCE_REPOSITORY}' is not registered for Vulcan artifact publishing." >&2
+              exit 1
+            fi
+            if [[ -n "${INPUT_ROLE_TO_ASSUME}" && "${INPUT_ROLE_TO_ASSUME}" != "${owner_role_to_assume}" ]]; then
+              echo "Explicit publisher role does not match the role registered for '${source_owner}'." >&2
+              exit 1
+            fi
+            role_to_assume="${owner_role_to_assume}"
+          fi
+          if [[ -n "${INPUT_ARTIFACT_NAMESPACE}" && "${INPUT_ARTIFACT_NAMESPACE}" != "${artifact_namespace}" ]]; then
+            echo "Artifact namespace '${INPUT_ARTIFACT_NAMESPACE}' does not match registered assignment '${artifact_namespace}'." >&2
+            exit 1
           fi
 
           for required in aws_region bucket role_to_assume; do
@@ -249,12 +288,14 @@ jobs:
             echo "role_to_assume=${role_to_assume}"
             echo "sse_kms_key_id=${sse_kms_key_id}"
             echo "cloudfront_distribution_id=${cloudfront_distribution_id}"
+            echo "artifact_namespace=${artifact_namespace}"
           } >> "${GITHUB_OUTPUT}"
           {
             echo "AWS_REGION=${aws_region}"
             echo "ARTIFACT_BUCKET=${bucket}"
             echo "SSE_KMS_KEY_ID=${sse_kms_key_id}"
             echo "CLOUDFRONT_DISTRIBUTION_ID=${cloudfront_distribution_id}"
+            echo "ARTIFACT_NAMESPACE=${artifact_namespace}"
           } >> "${GITHUB_ENV}"
 
       - name: Configure AWS credentials
@@ -464,9 +505,7 @@ jobs:
                   return fetch_branch_index(repo, github_headers(), "unauthenticated public fallback")
 
           github_repo = os.environ["GITHUB_REPOSITORY"]
-          owner, repo_name_from_context = github_repo.split("/", 1)
-          del owner
-          repo_name = clean_path_part(repo_name_from_context, "repository")
+          artifact_namespace = clean_path_part(os.environ["ARTIFACT_NAMESPACE"], "repository")
           branch_raw = (
               os.environ.get("SOURCE_BRANCH_INPUT", "").strip()
               or os.environ.get("GITHUB_HEAD_REF")
@@ -490,7 +529,7 @@ jobs:
               raise SystemExit(f"Expected at least {min_count} artifact(s), found {len(files)}")
 
           bucket = os.environ["ARTIFACT_BUCKET"]
-          prefix_parts = [repo_name, encoded_branch_key, short_commit]
+          prefix_parts = [artifact_namespace, encoded_branch_key, short_commit]
           if artifact_folder:
               prefix_parts.append(artifact_folder)
           prefix = "/".join(prefix_parts)
@@ -515,7 +554,7 @@ jobs:
           if os.environ["PUBLISH_MANIFEST"].lower() == "true":
               manifest = {
                   "repository": github_repo,
-                  "repository_key": repo_name,
+                  "repository_key": artifact_namespace,
                   "branch": branch_raw,
                   "branch_key": encoded_branch_key,
                   "commit_folder": short_commit,
@@ -540,7 +579,7 @@ jobs:
           branches_path.write_text(json.dumps(branches, indent=2) + "\n", encoding="utf-8")
           run(
               "aws", "s3", "cp", str(branches_path),
-              f"s3://{bucket}/{repo_name}/branches.json",
+              f"s3://{bucket}/{artifact_namespace}/branches.json",
               "--content-type", "application/json",
               *s3_cp_args(),
           )
@@ -550,12 +589,12 @@ jobs:
               run(
                   "aws", "cloudfront", "create-invalidation",
                   "--distribution-id", distribution_id,
-                  "--paths", f"/{prefix}/*", f"/{repo_name}/{encoded_branch_key}/latest.tag", f"/{repo_name}/branches.json",
+                  "--paths", f"/{prefix}/*", f"/{artifact_namespace}/{encoded_branch_key}/latest.tag", f"/{artifact_namespace}/branches.json",
               )
 
           print(f"published_count={len(files)}")
           print(f"published_prefix=s3://{bucket}/{prefix}/")
-          print(f"branches_index=s3://{bucket}/{repo_name}/branches.json")
+          print(f"branches_index=s3://{bucket}/{artifact_namespace}/branches.json")
           PY
 
       - name: Delete temporary GitHub artifacts

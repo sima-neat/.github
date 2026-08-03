@@ -13,6 +13,11 @@ on:
         required: false
         default: ""
         type: string
+      artifact_namespace:
+        description: Optional registered artifact root. When set, it must match the immutable namespace registry assignment.
+        required: false
+        default: ""
+        type: string
       aws_region:
         description: AWS region for S3 and STS.
         required: false
@@ -72,6 +77,7 @@ jobs:
       AWS_REGION: ${{ inputs.aws_region }}
       ARTIFACT_BUCKET: ${{ inputs.bucket || vars.VULCAN_ARTIFACT_BUCKET }}
       ARTIFACT_FOLDER_INPUT: ${{ inputs.artifact_folder }}
+      ARTIFACT_NAMESPACE_INPUT: ${{ inputs.artifact_namespace }}
       SOURCE_BRANCH_INPUT: ${{ inputs.source_branch }}
       SOURCE_COMMIT_INPUT: ${{ inputs.source_commit }}
       LATEST_TAG_INPUT: ${{ inputs.latest_tag }}
@@ -92,6 +98,7 @@ jobs:
           VAR_SSE_KMS_KEY_ID: ${{ vars.VULCAN_ARTIFACT_KMS_KEY_ID }}
           VAR_CONFIG_S3_URI: ${{ vars.VULCAN_CONFIG_S3_URI }}
           VAR_CONFIG_READER_ROLE_ARN: ${{ vars.VULCAN_CONFIG_READER_ROLE_ARN }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -123,6 +130,9 @@ jobs:
           sse_kms_key_id="${INPUT_SSE_KMS_KEY_ID:-${VAR_SSE_KMS_KEY_ID:-}}"
           needs_config=false
           if [[ -z "${bucket}" || -z "${role_to_assume}" || -z "${sse_kms_key_id}" ]]; then
+            needs_config=true
+          fi
+          if [[ "${SOURCE_REPOSITORY%%/*}" != "sima-neat" ]]; then
             needs_config=true
           fi
 
@@ -162,6 +172,9 @@ jobs:
           EXISTING_BUCKET: ${{ steps.config-location.outputs.bucket }}
           EXISTING_ROLE_TO_ASSUME: ${{ steps.config-location.outputs.role_to_assume }}
           EXISTING_SSE_KMS_KEY_ID: ${{ steps.config-location.outputs.sse_kms_key_id }}
+          INPUT_ROLE_TO_ASSUME: ${{ inputs.role_to_assume }}
+          INPUT_ARTIFACT_NAMESPACE: ${{ inputs.artifact_namespace }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -169,6 +182,11 @@ jobs:
           bucket="${EXISTING_BUCKET}"
           role_to_assume="${EXISTING_ROLE_TO_ASSUME}"
           sse_kms_key_id="${EXISTING_SSE_KMS_KEY_ID}"
+          source_owner="${SOURCE_REPOSITORY%%/*}"
+          source_name="${SOURCE_REPOSITORY#*/}"
+          artifact_namespace=""
+          owner_role_to_assume=""
+          legacy_role_to_assume=""
 
           if [[ "${NEEDS_CONFIG}" == "true" ]]; then
             config_file="$(mktemp)"
@@ -187,8 +205,29 @@ jobs:
 
             aws_region="${aws_region:-$(jq -r '.aws_region // empty' "${config_file}")}"
             bucket="${bucket:-$(jq -r '.artifacts.bucket // empty' "${config_file}")}"
-            role_to_assume="${role_to_assume:-$(jq -r '.artifacts.publisher_role_arn // empty' "${config_file}")}"
+            owner_role_to_assume="$(jq -r --arg owner "${source_owner}" '.artifacts.publisher_roles[$owner] // empty' "${config_file}")"
+            legacy_role_to_assume="$(jq -r '.artifacts.publisher_role_arn // empty' "${config_file}")"
+            artifact_namespace="$(jq -r --arg repository "${SOURCE_REPOSITORY}" '.artifacts.namespace_registry[$repository] // empty' "${config_file}")"
             sse_kms_key_id="${sse_kms_key_id:-$(jq -r '.artifacts.kms_key_id // empty' "${config_file}")}"
+          fi
+
+          if [[ "${source_owner}" == "sima-neat" ]]; then
+            role_to_assume="${role_to_assume:-${owner_role_to_assume:-${legacy_role_to_assume}}}"
+            artifact_namespace="${artifact_namespace:-${source_name}}"
+          else
+            if [[ -z "${artifact_namespace}" || -z "${owner_role_to_assume}" ]]; then
+              echo "Repository '${SOURCE_REPOSITORY}' is not registered for Vulcan artifact publishing." >&2
+              exit 1
+            fi
+            if [[ -n "${INPUT_ROLE_TO_ASSUME}" && "${INPUT_ROLE_TO_ASSUME}" != "${owner_role_to_assume}" ]]; then
+              echo "Explicit publisher role does not match the role registered for '${source_owner}'." >&2
+              exit 1
+            fi
+            role_to_assume="${owner_role_to_assume}"
+          fi
+          if [[ -n "${INPUT_ARTIFACT_NAMESPACE}" && "${INPUT_ARTIFACT_NAMESPACE}" != "${artifact_namespace}" ]]; then
+            echo "Artifact namespace '${INPUT_ARTIFACT_NAMESPACE}' does not match registered assignment '${artifact_namespace}'." >&2
+            exit 1
           fi
 
           for required in aws_region bucket role_to_assume; do
@@ -203,11 +242,13 @@ jobs:
             echo "bucket=${bucket}"
             echo "role_to_assume=${role_to_assume}"
             echo "sse_kms_key_id=${sse_kms_key_id}"
+            echo "artifact_namespace=${artifact_namespace}"
           } >> "${GITHUB_OUTPUT}"
           {
             echo "AWS_REGION=${aws_region}"
             echo "ARTIFACT_BUCKET=${bucket}"
             echo "SSE_KMS_KEY_ID=${sse_kms_key_id}"
+            echo "ARTIFACT_NAMESPACE=${artifact_namespace}"
           } >> "${GITHUB_ENV}"
 
       - name: Configure AWS credentials
@@ -299,9 +340,7 @@ jobs:
                   return ""
               return clean_path_part(value, "artifacts")
 
-          github_repo = os.environ["GITHUB_REPOSITORY"]
-          _, repo_name_from_context = github_repo.split("/", 1)
-          repo_name = clean_path_part(repo_name_from_context, "repository")
+          artifact_namespace = clean_path_part(os.environ["ARTIFACT_NAMESPACE"], "repository")
           branch_raw = (
               os.environ.get("SOURCE_BRANCH_INPUT", "").strip()
               or os.environ.get("GITHUB_HEAD_REF")
@@ -317,7 +356,7 @@ jobs:
           out.write_text(latest_tag + "\n", encoding="utf-8")
 
           bucket = os.environ["ARTIFACT_BUCKET"]
-          artifact_prefix_parts = [repo_name, encoded_branch_key, latest_tag]
+          artifact_prefix_parts = [artifact_namespace, encoded_branch_key, latest_tag]
           if artifact_folder:
               artifact_prefix_parts.append(artifact_folder)
           artifact_prefix = "/".join(artifact_prefix_parts)
@@ -328,7 +367,7 @@ jobs:
                   "--key", f"{artifact_prefix}/manifest.json",
               )
 
-          key = f"{repo_name}/{encoded_branch_key}/latest.tag"
+          key = f"{artifact_namespace}/{encoded_branch_key}/latest.tag"
           run(
               "aws", "s3", "cp", str(out), f"s3://{bucket}/{key}",
               "--content-type", "text/plain",

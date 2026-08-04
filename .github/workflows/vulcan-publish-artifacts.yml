@@ -585,7 +585,10 @@ jobs:
           )
 
           distribution_id = os.environ.get("CLOUDFRONT_DISTRIBUTION_ID", "").strip()
-          if distribution_id:
+          source_owner = os.environ["SOURCE_REPOSITORY"].split("/", 1)[0]
+          # Cross-owner publishers are intentionally denied distribution-wide
+          # invalidation. Their mutable indexes use non-caching behaviors.
+          if distribution_id and source_owner == "sima-neat":
               run(
                   "aws", "cloudfront", "create-invalidation",
                   "--distribution-id", distribution_id,

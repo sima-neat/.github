@@ -128,13 +128,9 @@ jobs:
           bucket="${INPUT_BUCKET:-${VAR_BUCKET:-}}"
           role_to_assume="${INPUT_ROLE_TO_ASSUME:-${VAR_ROLE_TO_ASSUME:-}}"
           sse_kms_key_id="${INPUT_SSE_KMS_KEY_ID:-${VAR_SSE_KMS_KEY_ID:-}}"
-          needs_config=false
-          if [[ -z "${bucket}" || -z "${role_to_assume}" || -z "${sse_kms_key_id}" ]]; then
-            needs_config=true
-          fi
-          if [[ "${SOURCE_REPOSITORY%%/*}" != "sima-neat" ]]; then
-            needs_config=true
-          fi
+          # Keep latest.tag in the same config-owned namespace used by the
+          # publisher, even when legacy bucket/role/KMS settings are complete.
+          needs_config=true
 
           config_s3_uri="${VAR_CONFIG_S3_URI:-${default_config_s3_uri}}"
           reader_role_arn="${VAR_CONFIG_READER_ROLE_ARN:-${default_reader_role_arn}}"

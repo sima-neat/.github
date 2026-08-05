@@ -169,13 +169,11 @@ jobs:
           role_to_assume="${INPUT_ROLE_TO_ASSUME:-${VAR_ROLE_TO_ASSUME:-}}"
           sse_kms_key_id="${INPUT_SSE_KMS_KEY_ID:-${VAR_SSE_KMS_KEY_ID:-}}"
           cloudfront_distribution_id="${INPUT_CLOUDFRONT_DISTRIBUTION_ID:-${VAR_CLOUDFRONT_DISTRIBUTION_ID:-}}"
-          needs_config=false
-          if [[ -z "${bucket}" || -z "${role_to_assume}" || -z "${sse_kms_key_id}" || -z "${cloudfront_distribution_id}" ]]; then
-            needs_config=true
-          fi
-          if [[ "${SOURCE_REPOSITORY%%/*}" != "sima-neat" ]]; then
-            needs_config=true
-          fi
+          # Repository namespaces and owner-specific publisher roles are owned
+          # by the Vulcan config. Always load it so a registered namespace that
+          # differs from the repository name cannot silently fall back to the
+          # legacy path when all direct publish settings are already populated.
+          needs_config=true
 
           config_s3_uri="${VAR_CONFIG_S3_URI:-${default_config_s3_uri}}"
           reader_role_arn="${VAR_CONFIG_READER_ROLE_ARN:-${default_reader_role_arn}}"

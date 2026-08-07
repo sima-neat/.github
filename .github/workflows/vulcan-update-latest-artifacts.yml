@@ -13,6 +13,16 @@ on:
         required: false
         default: ""
         type: string
+      config_s3_uri:
+        description: Optional Vulcan environment config S3 URI.
+        required: false
+        default: ""
+        type: string
+      config_reader_role_arn:
+        description: Optional AWS IAM role ARN used to read the Vulcan environment config.
+        required: false
+        default: ""
+        type: string
       artifact_namespace:
         description: Optional registered artifact root. When set, it must match the immutable namespace registry assignment.
         required: false
@@ -93,6 +103,8 @@ jobs:
           INPUT_BUCKET: ${{ inputs.bucket }}
           INPUT_ROLE_TO_ASSUME: ${{ inputs.role_to_assume }}
           INPUT_SSE_KMS_KEY_ID: ${{ inputs.sse_kms_key_id }}
+          INPUT_CONFIG_S3_URI: ${{ inputs.config_s3_uri }}
+          INPUT_CONFIG_READER_ROLE_ARN: ${{ inputs.config_reader_role_arn }}
           VAR_BUCKET: ${{ vars.VULCAN_ARTIFACT_BUCKET }}
           VAR_ROLE_TO_ASSUME: ${{ vars.VULCAN_ARTIFACT_PUBLISHER_ROLE_ARN }}
           VAR_SSE_KMS_KEY_ID: ${{ vars.VULCAN_ARTIFACT_KMS_KEY_ID }}
@@ -132,8 +144,8 @@ jobs:
           # publisher, even when legacy bucket/role/KMS settings are complete.
           needs_config=true
 
-          config_s3_uri="${VAR_CONFIG_S3_URI:-${default_config_s3_uri}}"
-          reader_role_arn="${VAR_CONFIG_READER_ROLE_ARN:-${default_reader_role_arn}}"
+          config_s3_uri="${INPUT_CONFIG_S3_URI:-${VAR_CONFIG_S3_URI:-${default_config_s3_uri}}}"
+          reader_role_arn="${INPUT_CONFIG_READER_ROLE_ARN:-${VAR_CONFIG_READER_ROLE_ARN:-${default_reader_role_arn}}}"
           if [[ "${needs_config}" == "true" && ( -z "${reader_role_arn}" || "${reader_role_arn}" == *":::"* ) ]]; then
             echo "Missing config reader role ARN for Vulcan environment '${config_env}'." >&2
             exit 1

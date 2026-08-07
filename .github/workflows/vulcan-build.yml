@@ -24,7 +24,7 @@ on:
         default: arm64
         type: string
       cache:
-        description: Optional generic cache label. For sdk, this overrides sdk_cache; for model-compiler, this selects the Model Compiler cache.
+        description: Optional generic cache label. For sdk this overrides sdk_cache; for ros2 or model-compiler this selects that profile's cache.
         required: false
         default: ""
         type: string
@@ -58,6 +58,16 @@ on:
         required: false
         default: true
         type: boolean
+      ensure_ros2_container:
+        description: Start the cached ROS2 SDK container and run build commands inside it.
+        required: false
+        default: true
+        type: boolean
+      ros2_image:
+        description: ROS2 SDK image that must already exist in the selected Vulcan snapshot.
+        required: false
+        default: ghcr.io/sima-vertical-solutions/ros2-sdk:latest
+        type: string
       sdk_setup_args:
         description: Arguments for sima-cli sdk setup when ensure_sdk_container is true.
         required: false
@@ -176,7 +186,7 @@ jobs:
           sdk_cache = os.environ["SDK_CACHE"].strip().lower()
           cache = os.environ["CACHE"].strip().lower()
 
-          allowed_profiles = {"sdk", "ubuntu", "model-compiler"}
+          allowed_profiles = {"sdk", "ros2", "ubuntu", "model-compiler"}
           allowed_architectures = {"arm64", "amd64"}
           label_pattern = re.compile(r"[a-z0-9][a-z0-9._-]*")
           if profile not in allowed_profiles:
@@ -209,6 +219,23 @@ jobs:
                   architecture,
                   f"vulcan-{vulcan_env}",
                   "sdk-build",
+                  effective_cache,
+                  capacity,
+              ]
+          elif profile == "ros2":
+              effective_cache = cache or "ros2-latest"
+              if not effective_cache.startswith("ros2-"):
+                  print("ROS2 profile requires a ros2-* cache label.", file=sys.stderr)
+                  sys.exit(1)
+              if architecture != "arm64":
+                  print("ROS2 profile currently supports only arm64.", file=sys.stderr)
+                  sys.exit(1)
+              labels = [
+                  "self-hosted",
+                  "linux",
+                  architecture,
+                  f"vulcan-{vulcan_env}",
+                  "ros2",
                   effective_cache,
                   capacity,
               ]
@@ -369,7 +396,7 @@ jobs:
           uname -a
           id
           df -h
-          if [[ "${VULCAN_RUNNER_PROFILE}" != "sdk" ]] && ! docker info >/dev/null 2>&1; then
+          if [[ "${VULCAN_RUNNER_PROFILE}" != "sdk" && "${VULCAN_RUNNER_PROFILE}" != "ros2" ]] && ! docker info >/dev/null 2>&1; then
             echo "Docker daemon is unavailable; it is optional for the ${VULCAN_RUNNER_PROFILE} runner profile."
           else
             docker version
@@ -409,6 +436,41 @@ jobs:
           /mnt/vulcan/bin/sima-cli sdk setup "${sdk_setup_argv[@]}"
           docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
 
+      - name: Start ROS2 SDK container
+        if: ${{ needs.resolve-runner.outputs.profile == 'ros2' && inputs.ensure_ros2_container }}
+        shell: bash
+        env:
+          ROS2_IMAGE: ${{ inputs.ros2_image }}
+          ROS2_WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        run: |
+          set -euo pipefail
+          container_name="vulcan-ros2-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if [[ "${ROS2_WORKING_DIRECTORY}" == /* || "/${ROS2_WORKING_DIRECTORY}/" == *"/../"* ]]; then
+            echo "ROS2 working_directory must stay within the checkout: ${ROS2_WORKING_DIRECTORY}" >&2
+            exit 1
+          fi
+          relative_workdir="${ROS2_WORKING_DIRECTORY#./}"
+          container_workdir="/workspace"
+          if [[ -n "${relative_workdir}" && "${relative_workdir}" != "." ]]; then
+            container_workdir="${container_workdir}/${relative_workdir}"
+          fi
+          docker image inspect "${ROS2_IMAGE}" >/dev/null
+          test "$(docker image inspect --format '{{.Architecture}}' "${ROS2_IMAGE}")" = arm64
+          docker run \
+            --detach \
+            --name "${container_name}" \
+            --pull never \
+            --user root \
+            --env HOME=/root \
+            --volume "${VULCAN_WORKSPACE}:/workspace" \
+            --workdir /workspace \
+            --entrypoint sleep \
+            "${ROS2_IMAGE}" infinity >/dev/null
+          echo "ROS2_CONTAINER=${container_name}" >> "${GITHUB_ENV}"
+          echo "ROS2_CONTAINER_WORKDIR=${container_workdir}" >> "${GITHUB_ENV}"
+          docker exec "${container_name}" test -r /etc/sdk-release
+          docker exec "${container_name}" cat /etc/sdk-release
+
       - name: Pre-build
         if: ${{ inputs.pre_build_command != '' }}
         shell: bash
@@ -417,7 +479,11 @@ jobs:
           PRE_BUILD_COMMAND: ${{ inputs.pre_build_command }}
         run: |
           set -euo pipefail
-          bash -lc "${PRE_BUILD_COMMAND}"
+          if [[ -n "${ROS2_CONTAINER:-}" ]]; then
+            docker exec --workdir "${ROS2_CONTAINER_WORKDIR}" "${ROS2_CONTAINER}" bash -lc "${PRE_BUILD_COMMAND}"
+          else
+            bash -lc "${PRE_BUILD_COMMAND}"
+          fi
 
       - name: Build
         shell: bash
@@ -426,7 +492,11 @@ jobs:
           BUILD_COMMAND: ${{ inputs.build_command }}
         run: |
           set -euo pipefail
-          bash -lc "${BUILD_COMMAND}"
+          if [[ -n "${ROS2_CONTAINER:-}" ]]; then
+            docker exec --workdir "${ROS2_CONTAINER_WORKDIR}" "${ROS2_CONTAINER}" bash -lc "${BUILD_COMMAND}"
+          else
+            bash -lc "${BUILD_COMMAND}"
+          fi
 
       - name: Post-build
         if: ${{ inputs.post_build_command != '' }}
@@ -436,7 +506,20 @@ jobs:
           POST_BUILD_COMMAND: ${{ inputs.post_build_command }}
         run: |
           set -euo pipefail
-          bash -lc "${POST_BUILD_COMMAND}"
+          if [[ -n "${ROS2_CONTAINER:-}" ]]; then
+            docker exec --workdir "${ROS2_CONTAINER_WORKDIR}" "${ROS2_CONTAINER}" bash -lc "${POST_BUILD_COMMAND}"
+          else
+            bash -lc "${POST_BUILD_COMMAND}"
+          fi
+
+      - name: Stop ROS2 SDK container
+        if: ${{ always() && needs.resolve-runner.outputs.profile == 'ros2' && inputs.ensure_ros2_container }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${ROS2_CONTAINER:-}" ]]; then
+            docker rm --force "${ROS2_CONTAINER}"
+          fi
 
       - name: Upload build artifact
         if: ${{ inputs.artifact_name != '' && inputs.artifact_path != '' }}

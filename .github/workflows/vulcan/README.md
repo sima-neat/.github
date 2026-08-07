@@ -90,6 +90,9 @@ jobs:
 | --- | --- | --- |
 | `vulcan_env` | empty | Vulcan environment override. Empty uses the caller repository or organization `VULCAN_ENV` variable, then `dev`. |
 | `sdk_cache` | `sdk-latest` | SDK cache snapshot label requested from Vulcan, such as `sdk-latest` or `sdk-2.1`. |
+| `runner_profile` | `sdk` | Runner environment: `sdk`, `ros2`, `model-compiler`, or `ubuntu`. |
+| `architecture` | `arm64` | Runner architecture. The ROS2 profile currently supports only `arm64`. |
+| `cache` | empty | Profile cache label. Use `ros2-latest` for the ROS2 profile. |
 | `capacity` | `default` | Runner size hint. Supported aliases are `cheaper`, `cheap`, `default`, `expensive`, and `most-expensive`. |
 | `working_directory` | `.` | Directory in the checked-out repository where commands run. |
 | `build_command` | `./build.sh --all --clean` | Main build command. |
@@ -97,6 +100,8 @@ jobs:
 | `post_build_command` | empty | Optional command to run after `build_command`. |
 | `ensure_sdk_container` | `true` | Runs `sima-cli sdk setup` before the build. |
 | `sdk_setup_args` | `-y -n --no-model-sdk --no-insight` | Arguments passed to `sima-cli sdk setup`. |
+| `ensure_ros2_container` | `true` | Starts the cached ROS2 SDK image and executes build commands in it for the ROS2 profile. |
+| `ros2_image` | `ghcr.io/sima-vertical-solutions/ros2-sdk:latest` | Exact local image tag expected in the selected ROS2 snapshot. The workflow never pulls it. |
 | `fetch_depth` | `1` | Checkout fetch depth. Use `0` when versioning depends on tags or full history. |
 | `checkout_submodules` | `recursive` | Value passed to `actions/checkout` for submodule fetching. |
 

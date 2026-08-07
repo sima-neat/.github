@@ -2,6 +2,10 @@ name: vulcan-build
 
 on:
   workflow_call:
+    secrets:
+      checkout_ssh_key:
+        description: Optional read-only SSH key used to initialize private submodules after checkout.
+        required: false
     inputs:
       vulcan_env:
         description: Vulcan environment label override. Empty uses the caller repo or org VULCAN_ENV variable, then dev.
@@ -374,6 +378,30 @@ jobs:
         with:
           fetch-depth: ${{ inputs.fetch_depth }}
           submodules: ${{ inputs.checkout_submodules }}
+
+      - name: Initialize private submodules
+        shell: bash
+        env:
+          CHECKOUT_SSH_KEY: ${{ secrets.checkout_ssh_key }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CHECKOUT_SSH_KEY}" ]]; then
+            echo "No private-submodule SSH key was provided."
+            exit 0
+          fi
+          key_file="$(mktemp)"
+          known_hosts_file="$(mktemp)"
+          cleanup() {
+            rm -f "${key_file}" "${known_hosts_file}"
+          }
+          trap cleanup EXIT
+          chmod 0600 "${key_file}"
+          printf '%s\n' "${CHECKOUT_SSH_KEY}" > "${key_file}"
+          ssh-keyscan -t ed25519 github.com > "${known_hosts_file}" 2>/dev/null
+          git submodule sync --recursive
+          git \
+            -c core.sshCommand="ssh -i ${key_file} -o IdentitiesOnly=yes -o UserKnownHostsFile=${known_hosts_file} -o StrictHostKeyChecking=yes" \
+            submodule update --init --recursive
 
       - name: Stage checkout into Vulcan workspace
         shell: bash

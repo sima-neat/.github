@@ -3,6 +3,9 @@ name: vulcan-build
 on:
   workflow_call:
     secrets:
+      checkout_token:
+        description: Optional token with read access to the caller repository and its private submodules.
+        required: false
       checkout_ssh_key:
         description: Optional read-only SSH key used to initialize private submodules after checkout.
         required: false
@@ -378,6 +381,7 @@ jobs:
         with:
           fetch-depth: ${{ inputs.fetch_depth }}
           submodules: ${{ inputs.checkout_submodules }}
+          token: ${{ secrets.checkout_token || github.token }}
 
       - name: Initialize private submodules
         shell: bash

@@ -13,6 +13,29 @@ It requests a Vulcan runner, waits for the scaler to launch the matching EC2
 Spot instance, checks out your repository, makes sure the SDK container is
 running, and executes the build command you provide.
 
+## Versioned SDK Selection
+
+Repositories that call `vulcan-resolve-config.yml` select a Neat SDK cache with
+the `sdk` object in `deps/manifest.json`:
+
+```json
+{
+  "platform-version": "2.1.3",
+  "sdk": {
+    "channel": "develop"
+  }
+}
+```
+
+The resolver combines the top-level platform version with the SDK channel into
+`sdk-2.1.3-develop`. Supported channels are `develop` and `official`. If the
+manifest has no SDK selector, the resolver uses the Terraform-managed
+environment default.
+
+For backward compatibility, `develop` without a top-level platform version
+continues to resolve to `sdk-develop`. Legacy `main` and numeric `sdk.channel`
+values resolve to `sdk-latest` and `sdk-{value}` during migration.
+
 ## Minimal Caller
 
 Add a workflow like this to the repository that needs to build on Vulcan:

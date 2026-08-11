@@ -37,6 +37,9 @@ on:
       sdk_channel:
         description: SDK channel resolved from deps/manifest.json, when present.
         value: ${{ jobs.resolve.outputs.sdk_channel }}
+      sdk_platform_version:
+        description: SDK platform compatibility line resolved from deps/manifest.json, when present.
+        value: ${{ jobs.resolve.outputs.sdk_platform_version }}
       capacity:
         description: Default capacity label.
         value: ${{ jobs.resolve.outputs.capacity }}
@@ -150,6 +153,7 @@ jobs:
       aws_region: ${{ steps.config.outputs.aws_region }}
       sdk_cache: ${{ steps.config.outputs.sdk_cache }}
       sdk_channel: ${{ steps.config.outputs.sdk_channel }}
+      sdk_platform_version: ${{ steps.config.outputs.sdk_platform_version }}
       capacity: ${{ steps.config.outputs.capacity }}
       docs_capacity: ${{ steps.config.outputs.docs_capacity }}
       sysdoc_capacity: ${{ steps.config.outputs.sysdoc_capacity }}
@@ -242,6 +246,7 @@ jobs:
           set -euo pipefail
 
           sdk_channel=""
+          sdk_platform_version=""
           if [[ -f deps/manifest.json ]]; then
             jq -e . deps/manifest.json >/dev/null
             sdk_channel="$(jq -r '
@@ -255,23 +260,41 @@ jobs:
             ' deps/manifest.json)"
             sdk_channel="$(echo "${sdk_channel}" | tr '[:upper:]' '[:lower:]' | xargs)"
 
+            sdk_platform_version="$(jq -r '.["platform-version"] // ""' deps/manifest.json)"
+            sdk_platform_version="$(echo "${sdk_platform_version}" | tr '[:upper:]' '[:lower:]' | xargs)"
+
             case "${sdk_channel}" in
-              ""|main|develop)
+              "")
+                ;;
+              official)
+                if [[ ! "${sdk_platform_version}" =~ ^[0-9]+([.][0-9]+){1,2}$ ]]; then
+                  echo "SDK channel '${sdk_channel}' requires top-level platform-version such as 2.1.3 in deps/manifest.json." >&2
+                  exit 1
+                fi
+                ;;
+              develop)
+                if [[ -n "${sdk_platform_version}" && ! "${sdk_platform_version}" =~ ^[0-9]+([.][0-9]+){1,2}$ ]]; then
+                  echo "SDK channel '${sdk_channel}' requires a valid top-level platform-version such as 2.1.3 when provided." >&2
+                  exit 1
+                fi
+                ;;
+              main)
                 ;;
               [0-9]*)
                 if [[ ! "${sdk_channel}" =~ ^[0-9][0-9a-z._-]*$ ]]; then
-                  echo "Unsupported SDK channel '${sdk_channel}' in deps/manifest.json. Use main, develop, or a version such as 2.0.0." >&2
+                  echo "Unsupported legacy SDK channel '${sdk_channel}' in deps/manifest.json." >&2
                   exit 1
                 fi
                 ;;
               *)
-                echo "Unsupported SDK channel '${sdk_channel}' in deps/manifest.json. Use main, develop, or a version such as 2.0.0." >&2
+                echo "Unsupported SDK channel '${sdk_channel}' in deps/manifest.json. Use develop or official; main and numeric values are legacy-only." >&2
                 exit 1
                 ;;
             esac
           fi
 
           printf 'sdk_channel=%s\n' "${sdk_channel}" >> "${GITHUB_OUTPUT}"
+          printf 'sdk_platform_version=%s\n' "${sdk_platform_version}" >> "${GITHUB_OUTPUT}"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
@@ -288,6 +311,7 @@ jobs:
           INPUT_CONFIG_S3_URI: ${{ steps.location.outputs.config_s3_uri }}
           INPUT_CONFIG_READER_ROLE_ARN: ${{ steps.location.outputs.config_reader_role_arn }}
           INPUT_SDK_CHANNEL: ${{ steps.sdk_manifest.outputs.sdk_channel }}
+          INPUT_SDK_PLATFORM_VERSION: ${{ steps.sdk_manifest.outputs.sdk_platform_version }}
           SOURCE_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -326,6 +350,7 @@ jobs:
           fi
 
           sdk_channel=""
+          sdk_platform_version="${INPUT_SDK_PLATFORM_VERSION}"
           sdk_cache="${default_sdk_cache}"
           sdk_channel="${INPUT_SDK_CHANNEL}"
           case "${sdk_channel}" in
@@ -335,7 +360,14 @@ jobs:
               sdk_cache="sdk-latest"
               ;;
             develop)
-              sdk_cache="sdk-develop"
+              if [[ -n "${sdk_platform_version}" ]]; then
+                sdk_cache="sdk-${sdk_platform_version}-develop"
+              else
+                sdk_cache="sdk-develop"
+              fi
+              ;;
+            official)
+              sdk_cache="sdk-${sdk_platform_version}-official"
               ;;
             *)
               sdk_cache="sdk-${sdk_channel}"
@@ -361,6 +393,7 @@ jobs:
           emit aws_region '.aws_region' us-west-2
           printf 'sdk_cache=%s\n' "${sdk_cache}" >> "${GITHUB_OUTPUT}"
           printf 'sdk_channel=%s\n' "${sdk_channel}" >> "${GITHUB_OUTPUT}"
+          printf 'sdk_platform_version=%s\n' "${sdk_platform_version}" >> "${GITHUB_OUTPUT}"
           emit capacity '.runner.default_capacity' default
           emit docs_capacity '.runner.docs_capacity' cheap
           emit sysdoc_capacity '.runner.sysdoc_capacity' cheap

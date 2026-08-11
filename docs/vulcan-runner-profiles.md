@@ -14,7 +14,7 @@ jobs:
     uses: sima-neat/.github/.github/workflows/vulcan-build.yml@main
     with:
       vulcan_env: production
-      sdk_cache: sdk-latest
+      sdk_cache: sdk-2.1.2-official
       capacity: default
       ensure_sdk_container: true
 ```
@@ -22,7 +22,7 @@ jobs:
 This resolves to the existing runner labels:
 
 ```text
-self-hosted, linux, arm64, vulcan-production, sdk-build, sdk-latest, default
+self-hosted, linux, arm64, vulcan-production, sdk-build, sdk-2.1.2-official, default
 ```
 
 ## Generic Ubuntu Profile

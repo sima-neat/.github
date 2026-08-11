@@ -425,6 +425,13 @@ jobs:
           echo "VULCAN_CACHE=${VULCAN_CACHE}"
           echo "SDK_CACHE=${SDK_CACHE}"
           echo "VULCAN_CAPACITY=${VULCAN_CAPACITY}"
+          echo "--- /etc/sdk-release ---"
+          if [[ -r /etc/sdk-release ]]; then
+            cat /etc/sdk-release
+          else
+            echo "Not present on this runner."
+          fi
+          echo "--- end /etc/sdk-release ---"
           uname -a
           id
           df -h

@@ -425,13 +425,6 @@ jobs:
           echo "VULCAN_CACHE=${VULCAN_CACHE}"
           echo "SDK_CACHE=${SDK_CACHE}"
           echo "VULCAN_CAPACITY=${VULCAN_CAPACITY}"
-          echo "--- /etc/sdk-release ---"
-          if [[ -r /etc/sdk-release ]]; then
-            cat /etc/sdk-release
-          else
-            echo "Not present on this runner."
-          fi
-          echo "--- end /etc/sdk-release ---"
           uname -a
           id
           df -h
@@ -474,6 +467,23 @@ jobs:
           read -r -a sdk_setup_argv <<< "${SDK_SETUP_ARGS}"
           /mnt/vulcan/bin/sima-cli sdk setup "${sdk_setup_argv[@]}"
           docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+
+          mapfile -t sdk_containers < <(
+            for container_id in $(docker ps --quiet); do
+              if docker exec "${container_id}" test -r /etc/sdk-release 2>/dev/null; then
+                printf '%s\n' "${container_id}"
+              fi
+            done
+          )
+          if [[ "${#sdk_containers[@]}" -ne 1 ]]; then
+            echo "Expected exactly one running SDK container with /etc/sdk-release; found ${#sdk_containers[@]}." >&2
+            exit 1
+          fi
+          sdk_container="${sdk_containers[0]}"
+          echo "--- SDK container /etc/sdk-release ---"
+          docker inspect --format 'Container={{.Name}} Image={{.Config.Image}}' "${sdk_container}"
+          docker exec "${sdk_container}" cat /etc/sdk-release
+          echo "--- end SDK container /etc/sdk-release ---"
 
       - name: Start ROS2 SDK container
         if: ${{ needs.resolve-runner.outputs.profile == 'ros2' && inputs.ensure_ros2_container }}

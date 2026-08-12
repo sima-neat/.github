@@ -193,6 +193,7 @@ jobs:
           source_owner="${SOURCE_REPOSITORY%%/*}"
           source_name="${SOURCE_REPOSITORY#*/}"
           artifact_namespace=""
+          repository_role_to_assume=""
           owner_role_to_assume=""
           legacy_role_to_assume=""
 
@@ -213,6 +214,7 @@ jobs:
 
             aws_region="${aws_region:-$(jq -r '.aws_region // empty' "${config_file}")}"
             bucket="${bucket:-$(jq -r '.artifacts.bucket // empty' "${config_file}")}"
+            repository_role_to_assume="$(jq -r --arg repository "${SOURCE_REPOSITORY}" '.artifacts.publisher_repository_roles[$repository] // empty' "${config_file}")"
             owner_role_to_assume="$(jq -r --arg owner "${source_owner}" '.artifacts.publisher_roles[$owner] // empty' "${config_file}")"
             legacy_role_to_assume="$(jq -r '.artifacts.publisher_role_arn // empty' "${config_file}")"
             artifact_namespace="$(jq -r --arg repository "${SOURCE_REPOSITORY}" '.artifacts.namespace_registry[$repository] // empty' "${config_file}")"
@@ -220,18 +222,19 @@ jobs:
           fi
 
           if [[ "${source_owner}" == "sima-neat" ]]; then
-            role_to_assume="${role_to_assume:-${owner_role_to_assume:-${legacy_role_to_assume}}}"
+            role_to_assume="${role_to_assume:-${repository_role_to_assume:-${owner_role_to_assume:-${legacy_role_to_assume}}}}"
             artifact_namespace="${artifact_namespace:-${source_name}}"
           else
-            if [[ -z "${artifact_namespace}" || -z "${owner_role_to_assume}" ]]; then
+            registered_role_to_assume="${repository_role_to_assume:-${owner_role_to_assume}}"
+            if [[ -z "${artifact_namespace}" || -z "${registered_role_to_assume}" ]]; then
               echo "Repository '${SOURCE_REPOSITORY}' is not registered for Vulcan artifact publishing." >&2
               exit 1
             fi
-            if [[ -n "${INPUT_ROLE_TO_ASSUME}" && "${INPUT_ROLE_TO_ASSUME}" != "${owner_role_to_assume}" ]]; then
-              echo "Explicit publisher role does not match the role registered for '${source_owner}'." >&2
+            if [[ -n "${INPUT_ROLE_TO_ASSUME}" && "${INPUT_ROLE_TO_ASSUME}" != "${registered_role_to_assume}" ]]; then
+              echo "Explicit publisher role does not match the role registered for '${SOURCE_REPOSITORY}'." >&2
               exit 1
             fi
-            role_to_assume="${owner_role_to_assume}"
+            role_to_assume="${registered_role_to_assume}"
           fi
           if [[ -n "${INPUT_ARTIFACT_NAMESPACE}" && "${INPUT_ARTIFACT_NAMESPACE}" != "${artifact_namespace}" ]]; then
             echo "Artifact namespace '${INPUT_ARTIFACT_NAMESPACE}' does not match registered assignment '${artifact_namespace}'." >&2

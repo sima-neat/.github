@@ -376,7 +376,9 @@ jobs:
 
           source_owner="${SOURCE_REPOSITORY%%/*}"
           source_name="${SOURCE_REPOSITORY#*/}"
-          artifact_publisher_role_arn="$(jq -r --arg owner "${source_owner}" '.artifacts.publisher_roles[$owner] // empty' "${config_file}")"
+          repository_publisher_role_arn="$(jq -r --arg repository "${SOURCE_REPOSITORY}" '.artifacts.publisher_repository_roles[$repository] // empty' "${config_file}")"
+          owner_publisher_role_arn="$(jq -r --arg owner "${source_owner}" '.artifacts.publisher_roles[$owner] // empty' "${config_file}")"
+          artifact_publisher_role_arn="${repository_publisher_role_arn:-${owner_publisher_role_arn}}"
           artifact_namespace="$(jq -r --arg repository "${SOURCE_REPOSITORY}" '.artifacts.namespace_registry[$repository] // empty' "${config_file}")"
           if [[ "${source_owner}" == "sima-neat" ]]; then
             artifact_publisher_role_arn="${artifact_publisher_role_arn:-$(jq -r '.artifacts.publisher_role_arn // empty' "${config_file}")}"

@@ -273,8 +273,8 @@ jobs:
                 fi
                 ;;
               develop)
-                if [[ -n "${sdk_platform_version}" && ! "${sdk_platform_version}" =~ ^[0-9]+([.][0-9]+){1,2}$ ]]; then
-                  echo "SDK channel '${sdk_channel}' requires a valid top-level platform-version such as 2.1.3 when provided." >&2
+                if [[ -n "${sdk_platform_version}" && ! "${sdk_platform_version}" =~ ^[0-9]+([.][0-9]+){1,2}(~pre[0-9]+)?$ ]]; then
+                  echo "SDK channel '${sdk_channel}' requires a top-level platform-version in X.Y.Z or X.Y.Z~preN form when provided." >&2
                   exit 1
                 fi
                 ;;
@@ -351,6 +351,7 @@ jobs:
 
           sdk_channel=""
           sdk_platform_version="${INPUT_SDK_PLATFORM_VERSION}"
+          sdk_platform_base="${sdk_platform_version%%~pre*}"
           sdk_cache="${default_sdk_cache}"
           sdk_channel="${INPUT_SDK_CHANNEL}"
           case "${sdk_channel}" in
@@ -360,8 +361,8 @@ jobs:
               sdk_cache="sdk-latest"
               ;;
             develop)
-              if [[ -n "${sdk_platform_version}" ]]; then
-                sdk_cache="sdk-${sdk_platform_version}-develop"
+              if [[ -n "${sdk_platform_base}" ]]; then
+                sdk_cache="sdk-${sdk_platform_base}-develop"
               else
                 sdk_cache="sdk-develop"
               fi

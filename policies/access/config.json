@@ -21,7 +21,12 @@
         "qat": "maintain",
         "roadmap": "maintain",
         "sima-cli": "maintain",
-        "model-compiler": "maintain"
+        "model-compiler": "maintain",
+        "minja": "maintain",
+        "workshop": "maintain",
+        "i18n": "maintain",
+        "lerobot": "maintain",
+        "polima": "maintain"
       }
     },
     "dev": {
@@ -43,7 +48,12 @@
         "sdk": "write",
         "sima-cli": "write",
         "sentinel": "write",
-        "model-compiler": "write"
+        "model-compiler": "write",
+        "minja": "write",
+        "workshop": "write",
+        "i18n": "write",
+        "lerobot": "write",
+        "polima": "write"
       }
     },
     "devops": {

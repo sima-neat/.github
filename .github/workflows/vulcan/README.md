@@ -300,6 +300,7 @@ Common inputs:
 | `merge_multiple` | `true` | Merge matching GitHub artifacts before publishing. |
 | `publish_manifest` | `true` | Upload `manifest.json` with file hashes and run metadata. |
 | `install_awscli` | `false` | Install AWS CLI v2 from Amazon's Linux installer. Leave false when the runner already has `aws`. |
+| `artifact_base_url` | environment config | Artifact CloudFront base URL used to verify published metadata. |
 | `cleanup_github_artifacts` | `true` | Delete matching GitHub Actions artifacts after a successful S3 publish. |
 
 The AWS role trust policy must restrict GitHub OIDC subjects to the intended
@@ -311,6 +312,18 @@ API `5xx` responses are retried with exponential backoff. If those retries are
 exhausted, the workflow uses an unauthenticated request only after verifying the
 caller repository is public; it never uses that fallback for private repositories
 or for authentication and authorization failures such as `401` or `403`.
+
+For SiMa-owned repositories, the publisher checks whether the commit-scoped S3
+prefix existed before upload. New prefixes are verified through CloudFront
+without invalidation. Existing prefixes are invalidated before verification;
+if verification of a new prefix detects stale or cached-negative content, the
+publisher performs the same narrow invalidation as a fallback. URL-encoded S3
+keys are converted into their CloudFront viewer paths, so an S3 branch key such
+as `feature%2Ffoo` is invalidated as `feature%252Ffoo`. Required invalidations
+are limited to the commit prefix and awaited before `metadata-all.json`,
+`metadata.json`, or `manifest.json` is verified through the configured artifact
+base URL. Mutable `latest.tag` and `branches.json` paths use non-caching
+behaviors and are not invalidated.
 
 `branches.json` is generated from the caller repository's current active
 GitHub branches each time artifacts are published. It is stored at:

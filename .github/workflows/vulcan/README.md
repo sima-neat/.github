@@ -300,6 +300,7 @@ Common inputs:
 | `merge_multiple` | `true` | Merge matching GitHub artifacts before publishing. |
 | `publish_manifest` | `true` | Upload `manifest.json` with file hashes and run metadata. |
 | `install_awscli` | `false` | Install AWS CLI v2 from Amazon's Linux installer. Leave false when the runner already has `aws`. |
+| `artifact_base_url` | environment config | Artifact CloudFront base URL used to verify published metadata after invalidation. |
 | `cleanup_github_artifacts` | `true` | Delete matching GitHub Actions artifacts after a successful S3 publish. |
 
 The AWS role trust policy must restrict GitHub OIDC subjects to the intended
@@ -311,6 +312,13 @@ API `5xx` responses are retried with exponential backoff. If those retries are
 exhausted, the workflow uses an unauthenticated request only after verifying the
 caller repository is public; it never uses that fallback for private repositories
 or for authentication and authorization failures such as `401` or `403`.
+
+For SiMa-owned repositories, the publisher converts URL-encoded S3 keys into
+their CloudFront viewer paths before invalidating them. For example, the S3
+branch key `feature%2Ffoo` is invalidated as the viewer path
+`feature%252Ffoo`. The publish job waits for the invalidation to complete and
+then verifies `metadata-all.json`, `metadata.json`, or `manifest.json` through
+the configured artifact base URL before downstream jobs can start.
 
 `branches.json` is generated from the caller repository's current active
 GitHub branches each time artifacts are published. It is stored at:

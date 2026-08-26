@@ -13,6 +13,68 @@ It requests a Vulcan runner, waits for the scaler to launch the matching EC2
 Spot instance, checks out your repository, makes sure the SDK container is
 running, and executes the build command you provide.
 
+## Protected-Branch Failure Notifications
+
+Use `vulcan-notify-slack.yml` from a small `workflow_run` listener when a
+repository needs proactive Slack notification after its complete Vulcan CI
+workflow fails. Keep the listener separate from `vulcan-build.yml`: the build
+workflow cannot observe failures in caller-owned hygiene, publication,
+hardware-test, or promotion jobs.
+
+The listener workflow must exist on the caller repository's default branch.
+This example reports actionable failures from `main` and `develop` while
+ignoring successful and superseded/cancelled runs:
+
+```yaml
+name: Vulcan CI Slack Notification
+
+on:
+  workflow_run:
+    workflows: ["Vulcan CI"]
+    types: [completed]
+    branches: [main, develop]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  notify-failure:
+    if: >-
+      ${{
+        github.event.workflow_run.conclusion == 'failure' ||
+        github.event.workflow_run.conclusion == 'timed_out' ||
+        github.event.workflow_run.conclusion == 'action_required' ||
+        github.event.workflow_run.conclusion == 'startup_failure' ||
+        github.event.workflow_run.conclusion == 'stale'
+      }}
+    uses: sima-neat/.github/.github/workflows/vulcan-notify-slack.yml@main
+    with:
+      channel_id: ${{ vars.SLACK_VULCAN_EVENT_CHANNEL_ID }}
+      run_id: ${{ github.event.workflow_run.id }}
+      repository: ${{ github.event.workflow_run.repository.full_name }}
+      workflow_name: ${{ github.event.workflow_run.name }}
+      branch: ${{ github.event.workflow_run.head_branch }}
+      head_sha: ${{ github.event.workflow_run.head_sha }}
+      conclusion: ${{ github.event.workflow_run.conclusion }}
+      run_attempt: ${{ github.event.workflow_run.run_attempt }}
+      run_url: ${{ github.event.workflow_run.html_url }}
+      actor: ${{ github.event.workflow_run.actor.login }}
+      commit_message: ${{ github.event.workflow_run.head_commit.message || '' }}
+    secrets:
+      slack_bot_token: ${{ secrets.SLACK_BOT_TOKEN }}
+```
+
+Configure these settings for the caller repository or its organization:
+
+- secret `SLACK_BOT_TOKEN`: bot token with `chat:write` permission;
+- variable `SLACK_VULCAN_EVENT_CHANNEL_ID`: the Slack channel ID, not its
+  display name.
+
+Invite the bot to the target channel. The listener grants `actions: read` so
+the shared notifier can include failed job names in the message. Pass only the
+Slack bot token explicitly; do not use `secrets: inherit`.
+
 ## Versioned SDK Selection
 
 Repositories that call `vulcan-resolve-config.yml` select a Neat SDK cache with

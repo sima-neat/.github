@@ -24,7 +24,7 @@ on:
         default: ""
         type: string
       artifact_namespace:
-        description: Optional registered artifact root. When set, it must match the immutable namespace registry assignment.
+        description: Optional registered primary or alias artifact root owned by the caller repository.
         required: false
         default: ""
         type: string
@@ -193,6 +193,7 @@ jobs:
           source_owner="${SOURCE_REPOSITORY%%/*}"
           source_name="${SOURCE_REPOSITORY#*/}"
           artifact_namespace=""
+          artifact_namespace_aliases='[]'
           repository_role_to_assume=""
           owner_role_to_assume=""
           legacy_role_to_assume=""
@@ -218,6 +219,7 @@ jobs:
             owner_role_to_assume="$(jq -r --arg owner "${source_owner}" '.artifacts.publisher_roles[$owner] // empty' "${config_file}")"
             legacy_role_to_assume="$(jq -r '.artifacts.publisher_role_arn // empty' "${config_file}")"
             artifact_namespace="$(jq -r --arg repository "${SOURCE_REPOSITORY}" '.artifacts.namespace_registry[$repository] // empty' "${config_file}")"
+            artifact_namespace_aliases="$(jq -c --arg repository "${SOURCE_REPOSITORY}" '.artifacts.namespace_aliases[$repository] // []' "${config_file}")"
             sse_kms_key_id="${sse_kms_key_id:-$(jq -r '.artifacts.kms_key_id // empty' "${config_file}")}"
           fi
 
@@ -236,9 +238,15 @@ jobs:
             fi
             role_to_assume="${registered_role_to_assume}"
           fi
-          if [[ -n "${INPUT_ARTIFACT_NAMESPACE}" && "${INPUT_ARTIFACT_NAMESPACE}" != "${artifact_namespace}" ]]; then
-            echo "Artifact namespace '${INPUT_ARTIFACT_NAMESPACE}' does not match registered assignment '${artifact_namespace}'." >&2
-            exit 1
+          if [[ -n "${INPUT_ARTIFACT_NAMESPACE}" ]]; then
+            if [[ "${INPUT_ARTIFACT_NAMESPACE}" != "${artifact_namespace}" ]] && ! jq -ne \
+              --arg requested "${INPUT_ARTIFACT_NAMESPACE}" \
+              --argjson aliases "${artifact_namespace_aliases}" \
+              '$aliases | index($requested) != null' >/dev/null; then
+              echo "Artifact namespace '${INPUT_ARTIFACT_NAMESPACE}' is not registered to '${SOURCE_REPOSITORY}'." >&2
+              exit 1
+            fi
+            artifact_namespace="${INPUT_ARTIFACT_NAMESPACE}"
           fi
 
           for required in aws_region bucket role_to_assume; do

@@ -24,3 +24,13 @@ def test_publish_workflows_enforce_registered_repository_role() -> None:
         assert 'registered_role_to_assume="${repository_role_to_assume:-${owner_role_to_assume}}"' in content
         assert '"${INPUT_ROLE_TO_ASSUME}" != "${registered_role_to_assume}"' in content
         assert 'role_to_assume="${registered_role_to_assume}"' in content
+
+
+def test_publish_workflows_allow_only_registered_namespace_aliases() -> None:
+    for name in ("vulcan-publish-artifacts.yml", "vulcan-update-latest-artifacts.yml"):
+        content = workflow(name)
+
+        assert ".artifacts.namespace_aliases[$repository] // []" in content
+        assert "'$aliases | index($requested) != null'" in content
+        assert "is not registered to '${SOURCE_REPOSITORY}'" in content
+        assert 'artifact_namespace="${INPUT_ARTIFACT_NAMESPACE}"' in content

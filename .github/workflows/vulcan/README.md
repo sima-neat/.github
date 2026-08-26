@@ -291,6 +291,7 @@ Common inputs:
 | `role_to_assume` | required | AWS IAM role ARN for GitHub OIDC. |
 | `aws_region` | `us-west-2` | AWS region for STS and S3. |
 | `environment_name` | `dev` | GitHub environment used for variables and approvals. |
+| `artifact_namespace` | registered primary root | Optional primary or alias artifact root registered to the caller repository. |
 | `artifact_folder` | `artifacts` | Folder under repo/branch where files are uploaded. |
 | `source_branch` | caller branch | Optional branch used for the artifact path; use the upstream branch for `workflow_run` callers. |
 | `source_commit` | caller SHA | Optional commit SHA used for the artifact path; use the upstream SHA for `workflow_run` callers. |
@@ -306,6 +307,10 @@ Common inputs:
 The AWS role trust policy must restrict GitHub OIDC subjects to the intended
 repositories, branches, and environments. The workflow is public, so AWS IAM is
 the enforcement point for who can publish to each bucket/prefix.
+
+Repositories that own more than one top-level artifact root may select a
+config-registered namespace alias with `artifact_namespace`. Unregistered roots
+are rejected before credentials are assumed or artifacts are uploaded.
 
 The branch index is fetched with the workflow's `GITHUB_TOKEN`. Transient GitHub
 API `5xx` responses are retried with exponential backoff. If those retries are

@@ -147,6 +147,7 @@
       "org_roles": [],
       "repos": {
         "apps": "write",
+        "cobot": "maintain",
         "core": "write",
         "docs": "write",
         "insight": "write",

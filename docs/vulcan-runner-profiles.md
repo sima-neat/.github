@@ -105,3 +105,27 @@ jobs:
 
 The workflow adds the cached Model Compiler virtual environment to `PATH` when
 the profile is `model-compiler`.
+
+## QAT Profile
+
+Use `runner_profile: qat` for single-GPU quantization-aware training. QAT
+runners currently support AMD64 only and register only after the NVIDIA driver,
+Docker, and NVIDIA container runtime pass host validation.
+
+```yaml
+jobs:
+  qat:
+    uses: sima-neat/.github/.github/workflows/vulcan-build.yml@main
+    with:
+      vulcan_env: staging
+      runner_profile: qat
+      architecture: amd64
+      capacity: default
+      ensure_sdk_container: false
+      build_command: ./models/example/qat/train.sh
+```
+
+Callers should resolve `capacity` from a schema-validated model resource
+request before invoking the GPU job. The model owns minimum GPU/host memory and
+storage requirements; Vulcan owns the mapping from capacity labels to approved
+EC2 Spot pools. Do not put raw EC2 instance types in model configuration.

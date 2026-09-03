@@ -53,7 +53,8 @@
         "workshop": "write",
         "i18n": "write",
         "lerobot": "write",
-        "polima": "write"
+        "polima": "write",
+        "kerrigan": "maintain"
       }
     },
     "devops": {

@@ -21,7 +21,7 @@ on:
         default: sdk-latest
         type: string
       runner_profile:
-        description: Vulcan runner profile. Defaults to the current SDK runner behavior.
+        description: "Vulcan runner profile: sdk, ros2, model-compiler, ubuntu, or qat."
         required: false
         default: sdk
         type: string
@@ -193,7 +193,7 @@ jobs:
           sdk_cache = os.environ["SDK_CACHE"].strip().lower()
           cache = os.environ["CACHE"].strip().lower()
 
-          allowed_profiles = {"sdk", "ros2", "ubuntu", "model-compiler"}
+          allowed_profiles = {"sdk", "ros2", "ubuntu", "model-compiler", "qat"}
           allowed_architectures = {"arm64", "amd64"}
           label_pattern = re.compile(r"[a-z0-9][a-z0-9._-]*")
           if profile not in allowed_profiles:
@@ -257,6 +257,21 @@ jobs:
               ]
               if effective_cache:
                   labels.append(effective_cache)
+          elif profile == "qat":
+              if architecture != "amd64":
+                  print("QAT profile currently supports only amd64.", file=sys.stderr)
+                  sys.exit(1)
+              if effective_cache:
+                  print("QAT profile does not accept a cache label.", file=sys.stderr)
+                  sys.exit(1)
+              labels = [
+                  "self-hosted",
+                  "linux",
+                  architecture,
+                  f"vulcan-{vulcan_env}",
+                  "qat",
+                  capacity,
+              ]
           else:
               labels = [
                   "self-hosted",
@@ -428,7 +443,7 @@ jobs:
           uname -a
           id
           df -h
-          if [[ "${VULCAN_RUNNER_PROFILE}" != "sdk" && "${VULCAN_RUNNER_PROFILE}" != "ros2" ]] && ! docker info >/dev/null 2>&1; then
+          if [[ "${VULCAN_RUNNER_PROFILE}" == "model-compiler" || "${VULCAN_RUNNER_PROFILE}" == "ubuntu" ]] && ! docker info >/dev/null 2>&1; then
             echo "Docker daemon is unavailable; it is optional for the ${VULCAN_RUNNER_PROFILE} runner profile."
           else
             docker version
@@ -437,6 +452,14 @@ jobs:
           if [[ "${VULCAN_RUNNER_PROFILE}" == "sdk" ]]; then
             test -x /mnt/vulcan/bin/sima-cli
             /mnt/vulcan/bin/sima-cli --version || /mnt/vulcan/bin/sima-cli version
+          fi
+          if [[ "${VULCAN_RUNNER_PROFILE}" == "qat" ]]; then
+            test "$(uname -m)" = x86_64
+            test -r /etc/vulcan/qat-gpu.json
+            nvidia-smi
+            test "$(nvidia-smi --query-gpu=index --format=csv,noheader | wc -l | tr -d ' ')" = 1
+            docker info --format '{{json .Runtimes}}' | grep -q nvidia
+            cat /etc/vulcan/qat-gpu.json
           fi
 
       - name: Configure Model Compiler environment

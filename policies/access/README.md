@@ -66,6 +66,7 @@ Current intended assignments:
 | `admin` | `security_manager` |
 | `dev` | `all_repository_read` |
 | `devops` | `ci_cd_admin`, `apps_manager` |
+| `cloud` | none |
 | `platform` | none |
 | `ae` | none |
 | `qa` | `all_repository_read` |
@@ -98,6 +99,8 @@ an explicit stewardship responsibility. This includes:
 
 Release and operations stewardship is represented separately through `devops`
 and `admin` repo grants.
+
+The `cloud` team has maintain access to `vulcan`, `arthas`, and `kerrigan`.
 
 The `qa` team has organization-wide read access and write access for repos
 where QA needs to contribute tests, issues, and validation work:

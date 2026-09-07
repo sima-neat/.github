@@ -127,6 +127,17 @@
         "insight": "write"
       }
     },
+    "cloud": {
+      "name": "cloud",
+      "description": "Cloud Development",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "vulcan": "maintain",
+        "arthas": "maintain",
+        "kerrigan": "maintain"
+      }
+    },
     "platform": {
       "name": "platform",
       "description": "Platform Development",

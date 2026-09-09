@@ -380,17 +380,32 @@ exhausted, the workflow uses an unauthenticated request only after verifying the
 caller repository is public; it never uses that fallback for private repositories
 or for authentication and authorization failures such as `401` or `403`.
 
-For SiMa-owned repositories, the publisher checks whether the commit-scoped S3
-prefix existed before upload. New prefixes are verified through CloudFront
-without invalidation. Existing prefixes are invalidated before verification;
-if verification of a new prefix detects stale or cached-negative content, the
-publisher performs the same narrow invalidation as a fallback. URL-encoded S3
-keys are converted into their CloudFront viewer paths, so an S3 branch key such
-as `feature%2Ffoo` is invalidated as `feature%252Ffoo`. Required invalidations
-are limited to the commit prefix and awaited before `metadata-all.json`,
-`metadata.json`, or `manifest.json` is verified through the configured artifact
-base URL. Mutable `latest.tag` and `branches.json` paths use non-caching
-behaviors and are not invalidated.
+For SiMa-owned repositories, publication checks the exact destination objects.
+New paths publish without invalidation, even when sibling artifact folders already
+exist under the same branch/commit. Existing identical bytes are not uploaded
+again; changed bytes are replaced. Reruns explicitly invalidate every existing
+artifact destination and wait for completion before verifying it. Refreshing even
+identical destinations lets a rerun recover a previous publication interrupted
+between upload and invalidation. This policy allows changed reruns, superseding
+the conflicting-overwrite rejection originally proposed in issue #140.
+
+All files (including the generated manifest) are uploaded and verified through S3
+before cache handling begins. Each exact object is then verified through CloudFront.
+Repeated HTTP 404 or checksum mismatch on a new path triggers an exact-path fallback;
+authentication, network and origin errors fail without speculative invalidation.
+Invalidation reasons, paths and counts are recorded in the job summary. S3 branch
+keys such as `feature%2Ffoo` use viewer paths such as `feature%252Ffoo`. There are no
+commit-prefix wildcards. Mutable `latest.tag`, `latest.json` and `branches.json`
+use caching-disabled behaviors and are never invalidated. Branch discovery is
+updated only after uploads, invalidation waits and verification succeed.
+
+Jobs with the same publication inputs are serialized without cancelling an active
+publisher; different artifact folders can still publish concurrently. Callers
+should use consistent namespace, branch, commit and folder inputs for the same
+destination. Cross-owner publishers retain their restricted permissions: they
+verify through S3 and reject changed replacements when CDN invalidation is
+unavailable. CloudFront invalidations do not clear client-side cached copies;
+new commit paths remain the preferred way to distribute new builds.
 
 `branches.json` is generated from the caller repository's current active
 GitHub branches each time artifacts are published. It is stored at:

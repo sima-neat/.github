@@ -150,7 +150,8 @@
         "sdk": "write",
         "model-compiler": "write",
         "llima": "write",
-        "models": "write"
+        "models": "write",
+        "kernels": "write"
       }
     },
     "ae": {

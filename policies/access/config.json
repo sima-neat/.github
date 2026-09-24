@@ -128,6 +128,15 @@
         "insight": "write"
       }
     },
+    "owners-kernels": {
+      "name": "owners-kernels",
+      "description": "Code owners for kernels",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "kernels": "maintain"
+      }
+    },
     "cloud": {
       "name": "cloud",
       "description": "Cloud Development",
@@ -150,7 +159,8 @@
         "sdk": "write",
         "model-compiler": "write",
         "llima": "write",
-        "models": "write"
+        "models": "write",
+        "kernels": "write"
       }
     },
     "ae": {

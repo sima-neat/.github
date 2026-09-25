@@ -54,6 +54,7 @@
         "i18n": "write",
         "lerobot": "write",
         "polima": "write",
+        "kernels": "write",
         "kerrigan": "maintain",
         "llima-compressor": "maintain"
       }

@@ -144,6 +144,12 @@ class DebianPublishContractTest(unittest.TestCase):
         self.assertNotEqual(bookworm["submission_id"], agate["submission_id"])
         self.assertEqual(agate["submission_id"], self.validate()[1]["submission_id"])
 
+    def test_release_field_requires_one_exact_field(self):
+        with self.assertRaisesRegex(ValueError, "exactly one Suite"):
+            publisher.release_field("X-Suite: bookworm\n", "Suite")
+        with self.assertRaisesRegex(ValueError, "exactly one Suite"):
+            publisher.release_field("Suite: bookworm\nSuite: agate\n", "Suite")
+
     def test_public_verification_checks_signed_index_filename(self):
         _, record = self.validate()
         home = Path(self.temp.name) / "gnupg"
@@ -165,7 +171,7 @@ class DebianPublishContractTest(unittest.TestCase):
         packages = Path(self.temp.name) / "Packages"
         release = Path(self.temp.name) / "Release"
         inrelease = Path(self.temp.name) / "InRelease"
-        def sign_index(index_filename):
+        def sign_index(index_filename, *, suite="bookworm", label="SiMa.ai official"):
             packages.write_text(
                 "Package: sima-cli\nVersion: 2.1.18\nArchitecture: amd64\n"
                 f"Filename: {index_filename}\nSize: {self.deb.stat().st_size}\n"
@@ -173,7 +179,7 @@ class DebianPublishContractTest(unittest.TestCase):
             )
             expiry = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)).strftime("%a, %d %b %Y %H:%M:%S UTC")
             release.write_text(
-                f"Label: SiMa.ai official\nSuite: bookworm\nValid-Until: {expiry}\nSHA256:\n"
+                f"Label: {label}\nSuite: {suite}\nValid-Until: {expiry}\nSHA256:\n"
                 f" {publisher.digest(packages)} {packages.stat().st_size} main/binary-amd64/Packages\n"
             )
             subprocess.run(["gpg", "--batch", "--yes", "--local-user", fingerprint, "--clearsign",
@@ -196,6 +202,12 @@ class DebianPublishContractTest(unittest.TestCase):
             publisher.verify_public(record, result, self.deb)
             sign_index("pool/bookworm/s/sima-cli/different.deb")
             with self.assertRaisesRegex(ValueError, "misdirected"):
+                publisher.verify_public(record, result, self.deb)
+            sign_index(filename, suite="bookworm-updates")
+            with self.assertRaisesRegex(ValueError, "suite mismatch"):
+                publisher.verify_public(record, result, self.deb)
+            sign_index(filename, label="SiMa.ai official-extra")
+            with self.assertRaisesRegex(ValueError, "label mismatch"):
                 publisher.verify_public(record, result, self.deb)
 
     def test_retries_transient_signature_verification_failure(self):

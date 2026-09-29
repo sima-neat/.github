@@ -183,6 +183,13 @@ def download(url: str, destination: Path) -> None:
                 output.write(chunk)
 
 
+def release_field(release_text: str, name: str) -> str:
+    values = [line.partition(":")[2].strip() for line in release_text.splitlines()
+              if line.startswith(f"{name}:")]
+    require(len(values) == 1, f"signed Release must contain exactly one {name} field")
+    return values[0]
+
+
 def verify_public(record: dict, result: dict, package: Path) -> None:
     channel_url = https_url(os.environ["CHANNEL_URL"])
     require(result.get("channel_url") == channel_url, "publisher returned a different channel URL")
@@ -210,8 +217,9 @@ def verify_public(record: dict, result: dict, package: Path) -> None:
         download(f"{channel_url}/dists/{record['suite']}/InRelease", inrelease)
         command("gpgv", "--keyring", str(keyring), "--output", str(release), str(inrelease))
         release_text = release.read_text()
-        require(f"Suite: {record['suite']}" in release_text, "signed Release suite mismatch")
-        require(f"Label: SiMa.ai {record['channel']}" in release_text, "signed Release label mismatch")
+        require(release_field(release_text, "Suite") == record["suite"], "signed Release suite mismatch")
+        require(release_field(release_text, "Label") == f"SiMa.ai {record['channel']}",
+                "signed Release label mismatch")
         expiry = re.search(r"^Valid-Until: (.+)$", release_text, re.MULTILINE)
         require(expiry is not None, "signed Release lacks Valid-Until")
         expiry_time = dt.datetime.strptime(expiry.group(1), "%a, %d %b %Y %H:%M:%S UTC").replace(tzinfo=dt.timezone.utc)

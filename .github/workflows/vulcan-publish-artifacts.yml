@@ -117,13 +117,19 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  publish:
-    name: Publish Vulcan artifacts
+  prepare:
+    name: Resolve publication destination
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment_name }}
-    concurrency:
-      group: vulcan-publish-${{ github.repository }}-${{ inputs.environment_name }}-${{ inputs.artifact_namespace }}-${{ inputs.source_branch || github.head_ref || github.ref_name }}-${{ inputs.source_commit || github.sha }}-${{ inputs.artifact_folder }}
-      cancel-in-progress: false
+    outputs:
+      aws_region: ${{ steps.publish-settings.outputs.aws_region }}
+      bucket: ${{ steps.publish-settings.outputs.bucket }}
+      role_to_assume: ${{ steps.publish-settings.outputs.role_to_assume }}
+      sse_kms_key_id: ${{ steps.publish-settings.outputs.sse_kms_key_id }}
+      cloudfront_distribution_id: ${{ steps.publish-settings.outputs.cloudfront_distribution_id }}
+      artifact_base_url: ${{ steps.publish-settings.outputs.artifact_base_url }}
+      artifact_namespace: ${{ steps.publish-settings.outputs.artifact_namespace }}
+      lock: ${{ steps.destination.outputs.lock }}
     env:
       AWS_REGION: ${{ inputs.aws_region }}
       ARTIFACT_BUCKET: ${{ inputs.bucket || vars.VULCAN_ARTIFACT_BUCKET }}
@@ -337,11 +343,61 @@ jobs:
             echo "ARTIFACT_NAMESPACE=${artifact_namespace}"
           } >> "${GITHUB_ENV}"
 
+      - name: Normalize publication destination
+        id: destination
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          import hashlib
+          import json
+          import os
+          import re
+          from urllib.parse import quote
+
+          def clean(raw):
+              value = re.sub(r"[^A-Za-z0-9._-]+", "-", raw.strip().replace("/", "-"))
+              return re.sub(r"-+", "-", value).strip(".-")
+
+          folder = os.environ['ARTIFACT_FOLDER_INPUT'].strip()
+          folder = '' if folder in {'', '.', './'} else clean(folder)
+          branch = os.environ.get('SOURCE_BRANCH_INPUT', '').strip() or os.environ.get('GITHUB_HEAD_REF') or os.environ['GITHUB_REF_NAME']
+          commit = os.environ.get('SOURCE_COMMIT_INPUT', '').strip() or os.environ['GITHUB_SHA']
+          destination = [os.environ['ARTIFACT_BUCKET'], clean(os.environ['ARTIFACT_NAMESPACE']), quote(branch.strip(), safe=''), commit[:12], folder]
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('lock=' + hashlib.sha256(json.dumps(destination).encode()).hexdigest() + '\n')
+          PYCODE
+
+  publish:
+    name: Publish Vulcan artifacts
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment_name }}
+    concurrency:
+      group: vulcan-publish-${{ needs.prepare.outputs.lock }}
+      cancel-in-progress: false
+    env:
+      AWS_REGION: ${{ needs.prepare.outputs.aws_region }}
+      ARTIFACT_BUCKET: ${{ needs.prepare.outputs.bucket }}
+      ARTIFACT_FOLDER_INPUT: ${{ inputs.artifact_folder }}
+      ARTIFACT_NAMESPACE_INPUT: ${{ inputs.artifact_namespace }}
+      SOURCE_BRANCH_INPUT: ${{ inputs.source_branch }}
+      SOURCE_COMMIT_INPUT: ${{ inputs.source_commit }}
+      ARTIFACT_PATTERN: ${{ inputs.artifact_pattern }}
+      ARTIFACT_GLOB: ${{ inputs.artifact_glob }}
+      DOWNLOAD_PATH: ${{ inputs.download_path }}
+      MIN_ARTIFACT_COUNT: ${{ inputs.min_artifact_count }}
+      PUBLISH_MANIFEST: ${{ inputs.publish_manifest }}
+      SSE_KMS_KEY_ID: ${{ needs.prepare.outputs.sse_kms_key_id }}
+      CLOUDFRONT_DISTRIBUTION_ID: ${{ needs.prepare.outputs.cloudfront_distribution_id }}
+      ARTIFACT_BASE_URL: ${{ needs.prepare.outputs.artifact_base_url }}
+      GH_TOKEN: ${{ github.token }}
+      ARTIFACT_NAMESPACE: ${{ needs.prepare.outputs.artifact_namespace }}
+    steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          aws-region: ${{ steps.publish-settings.outputs.aws_region }}
-          role-to-assume: ${{ steps.publish-settings.outputs.role_to_assume }}
+          aws-region: ${{ needs.prepare.outputs.aws_region }}
+          role-to-assume: ${{ needs.prepare.outputs.role_to_assume }}
           role-session-name: vulcan-publish-${{ github.run_id }}
 
       - name: Install aws cli tooling
@@ -384,6 +440,19 @@ jobs:
             fi
           done
 
+      - name: Verify conditional S3 upload support
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          for operation in ('put-object', 'complete-multipart-upload'):
+              model = json.loads(subprocess.check_output(
+                  ['aws', 's3api', operation, '--generate-cli-skeleton', 'input'], text=True))
+              if not {'IfMatch', 'IfNoneMatch'} <= model.keys():
+                  raise SystemExit('AWS CLI lacks conditional S3 writes; set install_awscli: true or upgrade AWS CLI v2')
+          PY
+
       - name: Download GitHub artifacts
         uses: actions/download-artifact@v7
         with:
@@ -395,8 +464,10 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import base64
           import hashlib
           import json
+          import mimetypes
           import os
           import re
           import subprocess
@@ -463,53 +534,156 @@ jobs:
                   with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
                       stream.write(message + "\n")
 
-          def s3_checksum(bucket: str, key: str) -> str | None:
-              # Read the exact object, never infer overwrites from a sibling folder.
+          def s3_json(operation: str, *args: str) -> dict:
+              return json.loads(run_output('aws', 's3api', operation, *args, '--output', 'json'))
+
+
+          def s3_object(bucket: str, key: str) -> dict | None:
+              # Prefix-qualified ListBucket is authorized even when absent GET/HEAD is not.
+              listing = s3_json('list-objects-v2', '--bucket', bucket, '--prefix', key,
+                                '--max-keys', '1', '--no-paginate')
+              if not any(item['Key'] == key for item in listing.get('Contents', [])):
+                  return None
+              return s3_json('head-object', '--bucket', bucket, '--key', key,
+                             '--checksum-mode', 'ENABLED')
+
+
+          def part_size(path: Path) -> int:
+              # At most 10,000 parts; normal artifacts need only one 64 MiB scratch part.
+              return max(64 * 1024 * 1024, (path.stat().st_size + 9999) // 10000)
+
+
+          def composite_checksum(path: Path, size: int) -> str:
+              checksums = []
+              with path.open('rb') as stream:
+                  while chunk := stream.read(size):
+                      checksums.append(hashlib.sha256(chunk).digest())
+              return base64.b64encode(hashlib.sha256(b''.join(checksums)).digest()).decode() + f'-{len(checksums)}'
+
+
+          def same_s3_content(bucket: str, key: str, path: Path, head: dict, checksum: str) -> bool:
+              if head['ContentLength'] != path.stat().st_size:
+                  return False
+              stored = head.get('ChecksumSHA256')
+              if stored and '-' not in stored:
+                  return stored == base64.b64encode(bytes.fromhex(checksum)).decode()
+              size = head.get('Metadata', {}).get('vulcan-part-size', '')
+              if stored and size.isdigit() and 5 * 1024 * 1024 <= int(size) <= 5 * 1024 ** 3:
+                  return stored == composite_checksum(path, int(size))
+              # Legacy uploads lack usable SHA256 checksums. Stream once without a disk copy,
+              # checking the ETag again afterward. New uploads never use this path.
+              with tempfile.TemporaryFile() as errors:
+                  with subprocess.Popen(
+                      ['aws', 's3', 'cp', f's3://{bucket}/{key}', '-', '--only-show-errors'],
+                      stdout=subprocess.PIPE, stderr=errors,
+                  ) as process:
+                      digest = hashlib.sha256()
+                      for chunk in iter(lambda: process.stdout.read(1024 * 1024), b''):
+                          digest.update(chunk)
+                      if process.wait():
+                          errors.seek(0)
+                          raise SystemExit(f'S3 legacy verification failed: {errors.read().decode()}')
+              current = s3_json('head-object', '--bucket', bucket, '--key', key)
+              if current['ETag'] != head['ETag']:
+                  raise SystemExit('S3 object changed during legacy verification; rerun publication')
+              return digest.hexdigest() == checksum
+
+
+          def upload_checked(bucket: str, key: str, path: Path, previous: dict | None, checksum: str) -> None:
+              condition = ['--if-match', previous['ETag']] if previous else ['--if-none-match', '*']
+              option_names = {'--sse': '--server-side-encryption', '--sse-kms-key-id': '--ssekms-key-id'}
+              encryption = [option_names.get(arg, arg) for arg in s3_cp_args()]
+              encryption.extend(['--content-type', mimetypes.guess_type(path.name)[0] or 'application/octet-stream'])
+              size = part_size(path)
+              if path.stat().st_size <= size:
+                  s3_json('put-object', '--bucket', bucket, '--key', key, '--body', str(path),
+                          '--checksum-algorithm', 'SHA256', '--checksum-sha256',
+                          base64.b64encode(bytes.fromhex(checksum)).decode(), *encryption, *condition)
+                  return
+              upload = s3_json('create-multipart-upload', '--bucket', bucket, '--key', key,
+                               '--checksum-algorithm', 'SHA256', '--metadata',
+                               json.dumps({'vulcan-part-size': str(size)}), *encryption)['UploadId']
+              completed = False
+              try:
+                  parts = []
+                  with tempfile.TemporaryDirectory() as directory, path.open('rb') as source:
+                      scratch = Path(directory) / 'part'
+                      while chunk := source.read(size):
+                          scratch.write_bytes(chunk)
+                          checksum_part = base64.b64encode(hashlib.sha256(chunk).digest()).decode()
+                          number = len(parts) + 1
+                          result = s3_json('upload-part', '--bucket', bucket, '--key', key,
+                                           '--upload-id', upload, '--part-number', str(number),
+                                           '--body', str(scratch), '--checksum-sha256', checksum_part)
+                          parts.append({'PartNumber': number, 'ETag': result['ETag'], 'ChecksumSHA256': checksum_part})
+                      manifest = Path(directory) / 'parts.json'
+                      manifest.write_text(json.dumps({'Parts': parts}))
+                      s3_json('complete-multipart-upload', '--bucket', bucket, '--key', key,
+                              '--upload-id', upload, '--multipart-upload', f'file://{manifest}', *condition)
+                      completed = True
+              finally:
+                  if not completed:
+                      run('aws', 's3api', 'abort-multipart-upload', '--bucket', bucket,
+                          '--key', key, '--upload-id', upload)
+
+
+          def preserve_legacy_manifest(bucket: str, key: str, path: Path) -> None:
+              previous = s3_object(bucket, key)
+              if previous is None:
+                  return
               with tempfile.TemporaryDirectory() as directory:
-                  path = Path(directory) / "object"
-                  result = subprocess.run(
-                      ["aws", "s3api", "get-object", "--bucket", bucket, "--key", key, str(path)],
-                      capture_output=True, text=True,
-                  )
-                  if result.returncode:
-                      if "(NoSuchKey)" in result.stderr:
-                          return None
-                      raise SystemExit(f"Cannot read s3://{bucket}/{key}: {result.stderr}")
-                  return sha256_file(path)
+                  downloaded = Path(directory) / 'manifest.json'
+                  s3_json('get-object', '--bucket', bucket, '--key', key,
+                          '--if-match', previous['ETag'], str(downloaded))
+                  old = json.loads(downloaded.read_text())
+                  stable = {key: value for key, value in old.items()
+                            if key not in {'run_id', 'run_attempt', 'published_at_utc'}}
+                  if stable == json.loads(path.read_text()):
+                      # Keep first-publication provenance for preexisting manifests.
+                      path.write_bytes(downloaded.read_bytes())
 
-          def publish_file(bucket: str, key: str, path: Path, allow_replace: bool) -> tuple[str, bool]:
+          def publish_file(bucket: str, key: str, path: Path, allow_replace: bool) -> tuple[str, bool, dict]:
               checksum = sha256_file(path)
-              previous = s3_checksum(bucket, key)
-              changed = previous is not None and previous != checksum
-              if changed and not allow_replace:
-                  raise SystemExit(f"Cannot replace s3://{bucket}/{key} without CDN invalidation permission/configuration")
-              if previous != checksum:
-                  # Keep s3 cp's multipart support for large model/build archives.
-                  run("aws", "s3", "cp", str(path), f"s3://{bucket}/{key}", *s3_cp_args())
-              if s3_checksum(bucket, key) != checksum:
-                  raise SystemExit(f"S3 content verification failed: s3://{bucket}/{key}")
-              return checksum, previous is not None
+              previous = s3_object(bucket, key)
+              identical = previous is not None and same_s3_content(bucket, key, path, previous, checksum)
+              if previous is not None and not identical and not allow_replace:
+                  raise SystemExit(f'Cannot replace s3://{bucket}/{key} without CDN invalidation permission/configuration')
+              if not identical:
+                  # Conditional PUT/completion also protects overlapping folders and cross-repo callers.
+                  # A lost race fails; never blindly retry with a newly observed destination ETag.
+                  upload_checked(bucket, key, path, previous, checksum)
+              head = s3_json('head-object', '--bucket', bucket, '--key', key, '--checksum-mode', 'ENABLED')
+              if identical:
+                  verified = head['ETag'] == previous['ETag'] and head['ContentLength'] == previous['ContentLength']
+              else:
+                  verified = same_s3_content(bucket, key, path, head, checksum)
+              if not verified:
+                  raise SystemExit(f'S3 content verification failed: s3://{bucket}/{key}')
+              return checksum, previous is not None, {'etag': head['ETag'], 'size': head['ContentLength']}
 
-          def verify_cloudfront_file(base_url: str, viewer_path: str, expected_sha256: str) -> bool:
+
+          def verify_cloudfront_file(base_url: str, viewer_path: str, expected: dict) -> bool:
               url = f"{base_url.rstrip('/')}{viewer_path}"
               for attempt in range(3):
                   try:
-                      with urllib.request.urlopen(url, timeout=60) as resp:
-                          checksum = hashlib.sha256()
-                          for chunk in iter(lambda: resp.read(1024 * 1024), b""):
-                              checksum.update(chunk)
-                      if checksum.hexdigest() == expected_sha256:
-                          return True
-                      detail = "SHA-256 mismatch"
+                      request = urllib.request.Request(url, method='HEAD', headers={'Accept-Encoding': 'identity'})
+                      with urllib.request.urlopen(request, timeout=60) as resp:
+                          if resp.headers.get('ETag') == expected['etag'] and resp.headers.get('Content-Length') == str(expected['size']):
+                              return True
+                      detail = 'ETag/size mismatch'
                   except urllib.error.HTTPError as exc:
+                      # A cached 403 may be S3's missing-key response. Age is evidence of a
+                      # cached response, not proof of authorization: allow one repair only.
+                      cached_forbidden = exc.code == 403 and int(exc.headers.get('Age', '0')) > 0
                       exc.close()
-                      if exc.code != 404:
-                          raise  # Authentication/origin errors do not prove stale cache.
-                      detail = "HTTP 404 after S3 verification"
+                      if exc.code != 404 and not cached_forbidden:
+                          raise
+                      detail = f'HTTP {exc.code} after S3 verification'
                   if attempt < 2:
                       time.sleep(2)
-              print(f"CloudFront verification failed for {viewer_path}: {detail}", flush=True)
+              print(f'CloudFront verification failed for {viewer_path}: {detail}', flush=True)
               return False
+
 
           def create_cloudfront_invalidation(distribution_id: str, paths: list[str], reason: str) -> int:
               paths = sorted(set(paths))
@@ -535,7 +709,7 @@ jobs:
 
           def ensure_cloudfront_consistency(
               distribution_id: str, base_url: str,
-              published: dict[str, str], replaced: list[str],
+              published: dict[str, dict], replaced: list[str],
           ) -> None:
               if not base_url:
                   raise SystemExit("Artifact base URL is required for CloudFront verification")
@@ -687,16 +861,15 @@ jobs:
           if manage_cloudfront and not base_url:
               raise SystemExit("Artifact base URL is required before publishing")
           replaced_paths = []
-          now = datetime.now(timezone.utc).isoformat()
           manifest_entries = []
-          published_checksums = {}
+          published_objects = {}
 
           for path in files:
               rel = path.relative_to(download_path)
               rel_key = "/".join(rel.parts)
-              checksum, replaced = publish_file(bucket, f"{prefix}/{rel_key}", path, manage_cloudfront)
+              checksum, replaced, identity = publish_file(bucket, f"{prefix}/{rel_key}", path, manage_cloudfront)
               viewer_path = cloudfront_viewer_path(f"{prefix}/{rel_key}")
-              published_checksums[viewer_path] = checksum
+              published_objects[viewer_path] = identity
               if replaced:
                   replaced_paths.append(viewer_path)
               manifest_entries.append({
@@ -718,24 +891,23 @@ jobs:
                   "commit_folder": short_commit,
                   "artifact_folder": artifact_folder,
                   "commit": commit,
-                  "run_id": os.environ["GITHUB_RUN_ID"],
-                  "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
-                  "published_at_utc": now,
                   "artifacts": manifest_entries,
               }
               manifest_path = index_dir / "manifest.json"
               manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-              checksum, replaced = publish_file(bucket, f"{prefix}/manifest.json", manifest_path, manage_cloudfront)
+              if not manage_cloudfront:
+                  preserve_legacy_manifest(bucket, f"{prefix}/manifest.json", manifest_path)
+              checksum, replaced, identity = publish_file(bucket, f"{prefix}/manifest.json", manifest_path, manage_cloudfront)
               viewer_path = cloudfront_viewer_path(f"{prefix}/manifest.json")
-              published_checksums[viewer_path] = checksum
+              published_objects[viewer_path] = identity
               if replaced:
                   replaced_paths.append(viewer_path)
 
           # Complete all uploads, required invalidations and verification before discovery.
           if manage_cloudfront:
-              ensure_cloudfront_consistency(distribution_id, base_url, published_checksums, replaced_paths)
+              ensure_cloudfront_consistency(distribution_id, base_url, published_objects, replaced_paths)
           else:
-              summary(f"- Verified {len(published_checksums)} objects through S3; CloudFront invalidation paths: 0 (cross-owner or no distribution).")
+              summary(f"- Verified {len(published_objects)} objects through S3; CloudFront invalidation paths: 0 (cross-owner or no distribution).")
 
           branches = fetch_branches(github_repo, os.environ["GH_TOKEN"])
           branches_path = index_dir / "branches.json"

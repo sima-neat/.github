@@ -1,6 +1,8 @@
+import base64
 import hashlib
 import io
 import json
+import mimetypes
 import os
 import re
 import subprocess
@@ -11,6 +13,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import ClassVar
 from urllib.parse import quote
 
 import pytest
@@ -31,9 +34,11 @@ def publisher_helpers():
     )
     assert match is not None
     namespace = {
+        "base64": base64,
         "datetime": datetime,
         "hashlib": hashlib,
         "json": json,
+        "mimetypes": mimetypes,
         "os": os,
         "Path": Path,
         "quote": quote,
@@ -58,35 +63,48 @@ def test_encoded_branch_viewer_path():
     )
 
 
-@pytest.mark.parametrize("previous", [None, "identical", "old bytes"])
+def object_head(data):
+    return {
+        "ContentLength": len(data),
+        "ETag": '"' + hashlib.md5(data).hexdigest() + '"',
+        "ChecksumSHA256": base64.b64encode(hashlib.sha256(data).digest()).decode(),
+    }
+
+
+@pytest.fixture(autouse=True)
+def forbid_live_aws(monkeypatch):
+    def forbidden(*args, **kwargs):
+        pytest.fail("Tests must not invoke real AWS commands")
+
+    monkeypatch.setattr(subprocess, "check_output", forbidden)
+    monkeypatch.setattr(subprocess, "run", forbidden)
+    monkeypatch.setattr(subprocess, "Popen", forbidden)
+
+
+@pytest.mark.parametrize("previous", [None, b"new bytes", b"old bytes"])
 def test_exact_file_publication_and_rerun(tmp_path, previous):
     helpers = publisher_helpers()
     path = tmp_path / "package"
     path.write_bytes(b"new bytes")
-    expected = hashlib.sha256(path.read_bytes()).hexdigest()
-    if previous == "identical":
-        previous = expected
-    checks = iter([previous, expected])
-    keys, uploads = [], []
-    helpers["s3_checksum"] = lambda bucket, key: (
-        keys.append((bucket, key)) or next(checks)
+    head = object_head(path.read_bytes())
+    uploads = []
+    helpers["s3_object"] = lambda *_: object_head(previous) if previous else None
+    helpers["s3_json"] = lambda *_: head
+    helpers["upload_checked"] = lambda *args: uploads.append(args)
+    checksum, existed, identity = helpers["publish_file"](
+        "bucket", "exact/key", path, True
     )
-    helpers["run"] = lambda *args: uploads.append(args)
-    key = "core/main/abc/arm64/package"
-    assert helpers["publish_file"]("bucket", key, path, True) == (
-        expected,
-        previous is not None,
-    )
-    assert keys == [("bucket", key), ("bucket", key)]
-    assert len(uploads) == (0 if previous == expected else 1)
+    assert checksum == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert existed == (previous is not None)
+    assert identity == {"etag": head["ETag"], "size": head["ContentLength"]}
+    assert len(uploads) == (0 if previous == path.read_bytes() else 1)
 
 
 def test_cannot_replace_without_invalidation_permission(tmp_path):
     helpers = publisher_helpers()
     path = tmp_path / "package"
-    path.write_bytes(b"new bytes")
-    helpers["s3_checksum"] = lambda *_: "old"
-    helpers["run"] = lambda *_: pytest.fail("must not upload")
+    path.write_bytes(b"new")
+    helpers["s3_object"] = lambda *_: object_head(b"old")
     with pytest.raises(SystemExit, match="without CDN invalidation"):
         helpers["publish_file"]("bucket", "key", path, False)
 
@@ -94,35 +112,128 @@ def test_cannot_replace_without_invalidation_permission(tmp_path):
 def test_s3_verification_failure_blocks_publication(tmp_path):
     helpers = publisher_helpers()
     path = tmp_path / "package"
-    path.write_bytes(b"new bytes")
-    checks = iter([None, "corrupted"])
-    helpers["s3_checksum"] = lambda *_: next(checks)
-    helpers["run"] = lambda *_: None
+    path.write_bytes(b"new")
+    helpers["s3_object"] = lambda *_: None
+    helpers["upload_checked"] = lambda *_: None
+    helpers["s3_json"] = lambda *_: object_head(b"bad")
     with pytest.raises(SystemExit, match="S3 content verification"):
         helpers["publish_file"]("bucket", "key", path, True)
 
 
-def test_exact_missing_key_only_and_access_failures(monkeypatch):
+@pytest.mark.parametrize("keys", [[], ["exact/key-sibling"], ["exact/key"]])
+def test_exact_missing_key_only_and_access_failures(keys):
     helpers = publisher_helpers()
     calls = []
 
-    def missing(args, **kwargs):
-        calls.append(args)
-        return subprocess.CompletedProcess(args, 1, stderr="(NoSuchKey)")
+    def aws(operation, *args):
+        calls.append((operation, args))
+        return (
+            {"Contents": [{"Key": key} for key in keys]}
+            if operation == "list-objects-v2"
+            else object_head(b"data")
+        )
 
-    monkeypatch.setattr(subprocess, "run", missing)
-    assert helpers["s3_checksum"]("bucket", "core/abc/arm64/file") is None
-    assert calls[0][1:3] == ["s3api", "get-object"]
-    assert calls[0][calls[0].index("--key") + 1] == "core/abc/arm64/file"
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda args, **kwargs: subprocess.CompletedProcess(
-            args, 1, stderr="(AccessDenied)"
-        ),
+    helpers["s3_json"] = aws
+    result = helpers["s3_object"]("bucket", "exact/key")
+    assert (result is not None) == ("exact/key" in keys)
+    assert calls[0][1][calls[0][1].index("--prefix") + 1] == "exact/key"
+    assert len(calls) == (2 if result else 1)
+
+    def denied(*args):
+        raise subprocess.CalledProcessError(1, "aws", stderr="AccessDenied")
+
+    helpers["s3_json"] = denied
+    with pytest.raises(subprocess.CalledProcessError):
+        helpers["s3_object"]("bucket", "key")
+
+
+@pytest.mark.parametrize("previous", [None, {"ETag": "old"}])
+def test_conditional_put_with_service_checksum(tmp_path, previous):
+    helpers = publisher_helpers()
+    path = tmp_path / "package"
+    path.write_bytes(b"content")
+    calls = []
+    helpers["s3_json"] = lambda *args: calls.append(args) or {}
+    helpers["upload_checked"](
+        "bucket", "key", path, previous, hashlib.sha256(b"content").hexdigest()
     )
-    with pytest.raises(SystemExit, match="AccessDenied"):
-        helpers["s3_checksum"]("bucket", "key")
+    args = calls[0]
+    assert args[0] == "put-object"
+    assert args[args.index("--server-side-encryption") + 1] == "aws:kms"
+    assert "--sse" not in args
+    flag = "--if-match" if previous else "--if-none-match"
+    assert args[args.index(flag) + 1] == ("old" if previous else "*")
+    assert (
+        args[args.index("--checksum-sha256") + 1]
+        == object_head(b"content")["ChecksumSHA256"]
+    )
+
+
+@pytest.mark.parametrize("fail_completion", [False, True])
+def test_multipart_checksum_conditional_completion_and_abort(tmp_path, fail_completion):
+    helpers = publisher_helpers()
+    path = tmp_path / "large"
+    path.write_bytes(b"abcdefghij")
+    helpers["part_size"] = lambda *_: 4
+    calls, parts = [], []
+
+    def aws(operation, *args):
+        calls.append((operation, args))
+        if operation == "create-multipart-upload":
+            return {"UploadId": "upload"}
+        if operation == "upload-part":
+            data = Path(args[args.index("--body") + 1]).read_bytes()
+            parts.append(data)
+            assert (
+                args[args.index("--checksum-sha256") + 1]
+                == object_head(data)["ChecksumSHA256"]
+            )
+            return {"ETag": "part"}
+        if operation == "complete-multipart-upload":
+            assert args[args.index("--if-match") + 1] == "old"
+            manifest = json.loads(
+                Path(args[args.index("--multipart-upload") + 1][7:]).read_text()
+            )
+            assert [p["PartNumber"] for p in manifest["Parts"]] == [1, 2, 3]
+            if fail_completion:
+                raise subprocess.CalledProcessError(1, "aws")
+        return {}
+
+    helpers["s3_json"] = aws
+    helpers["run"] = lambda *args: calls.append(("abort", args))
+    if fail_completion:
+        with pytest.raises(subprocess.CalledProcessError):
+            helpers["upload_checked"]("bucket", "key", path, {"ETag": "old"}, "unused")
+        assert calls[-1][0] == "abort"
+    else:
+        helpers["upload_checked"]("bucket", "key", path, {"ETag": "old"}, "unused")
+        assert calls[-1][0] == "complete-multipart-upload"
+    assert b"".join(parts) == path.read_bytes()
+    assert max(map(len, parts)) == 4
+
+
+def test_legacy_manifest_keeps_first_publication_provenance(tmp_path):
+    helpers = publisher_helpers()
+    path = tmp_path / "manifest.json"
+    stable = {"repository": "other/repo", "artifacts": [{"sha256": "abc"}]}
+    original = (
+        json.dumps(
+            {**stable, "published_at_utc": "old", "run_id": "1", "run_attempt": "1"}
+        )
+        + "\n"
+    )
+    path.write_text(json.dumps(stable))
+    helpers["s3_object"] = lambda *_: {"ETag": "old"}
+
+    def aws(operation, *args):
+        assert operation == "get-object"
+        assert args[args.index("--if-match") + 1] == "old"
+        Path(args[-1]).write_text(original)
+        return {}
+
+    helpers["s3_json"] = aws
+    helpers["preserve_legacy_manifest"]("bucket", "key", path)
+    assert path.read_text() == original
 
 
 def events(results, existing=()):
@@ -198,28 +309,40 @@ def test_invalidation_waits_and_records_exact_unique_paths():
 def test_cdn_error_classification(monkeypatch):
     helpers = publisher_helpers()
     monkeypatch.setattr(time, "sleep", lambda *_: None)
-    checksum = hashlib.sha256(b"content").hexdigest()
-    monkeypatch.setattr(
-        urllib.request, "urlopen", lambda *args, **kwargs: io.BytesIO(b"content")
-    )
-    assert helpers["verify_cloudfront_file"]("https://cdn", "/key", checksum)
-    monkeypatch.setattr(
-        urllib.request, "urlopen", lambda *args, **kwargs: io.BytesIO(b"stale")
-    )
-    assert not helpers["verify_cloudfront_file"]("https://cdn", "/key", checksum)
+    expected = {"etag": '"etag"', "size": 7}
 
-    def error(*args, **kwargs):
-        raise urllib.error.HTTPError("url", 404, "missing", {}, io.BytesIO())
+    class Response(io.BytesIO):
+        headers: ClassVar[dict] = {"ETag": '"etag"', "Content-Length": "7"}
 
-    monkeypatch.setattr(urllib.request, "urlopen", error)
-    assert not helpers["verify_cloudfront_file"]("https://cdn", "/key", checksum)
+        def read(self, *args):
+            pytest.fail("CDN verification must not download the body")
 
-    def denied(*args, **kwargs):
-        raise urllib.error.HTTPError("url", 403, "denied", {}, io.BytesIO())
+    def success(request, **kwargs):
+        assert request.get_method() == "HEAD"
+        return Response()
 
-    monkeypatch.setattr(urllib.request, "urlopen", denied)
-    with pytest.raises(urllib.error.HTTPError):
-        helpers["verify_cloudfront_file"]("https://cdn", "/key", checksum)
+    monkeypatch.setattr(urllib.request, "urlopen", success)
+    assert helpers["verify_cloudfront_file"]("https://cdn", "/key", expected)
+    Response.headers = {"ETag": '"stale"', "Content-Length": "7"}
+    assert not helpers["verify_cloudfront_file"]("https://cdn", "/key", expected)
+    for code, headers, retry in [
+        (404, {}, True),
+        (403, {"Age": "5"}, True),
+        (403, {}, False),
+        (500, {}, False),
+    ]:
+
+        def error(*args, code=code, headers=headers, **kwargs):
+            raise urllib.error.HTTPError("url", code, "error", headers, io.BytesIO())
+
+        monkeypatch.setattr(urllib.request, "urlopen", error)
+        if retry:
+            assert not helpers["verify_cloudfront_file"](
+                "https://cdn", "/key", expected
+            )
+        else:
+            with pytest.raises(urllib.error.HTTPError):
+                helpers["verify_cloudfront_file"]("https://cdn", "/key", expected)
 
 
 def test_publication_barrier_and_no_prefix_invalidation():
@@ -229,7 +352,7 @@ def test_publication_barrier_and_no_prefix_invalidation():
     assert "cancel-in-progress: false" in content
     assert "inputs.artifact_folder }}" in content
     barrier = content.index(
-        "ensure_cloudfront_consistency(distribution_id, base_url, published_checksums, replaced_paths)"
+        "ensure_cloudfront_consistency(distribution_id, base_url, published_objects, replaced_paths)"
     )
     assert barrier < content.index("branches = fetch_branches")
     helper = content[
@@ -248,14 +371,13 @@ def test_parallel_sibling_folders_do_not_trigger_invalidation(tmp_path):
     path = tmp_path / "package"
     path.write_bytes(b"package")
     objects, invalidations = {}, []
-    helpers["s3_checksum"] = lambda bucket, key: objects.get(key)
+    helpers["s3_object"] = lambda bucket, key: objects.get(key)
+    helpers["s3_json"] = lambda operation, *args: objects[args[args.index("--key") + 1]]
 
-    def upload(*args):
-        objects[args[4].removeprefix("s3://bucket/")] = helpers["sha256_file"](
-            Path(args[3])
-        )
+    def upload(bucket, key, path, previous, checksum):
+        objects[key] = object_head(path.read_bytes())
 
-    helpers["run"] = upload
+    helpers["upload_checked"] = upload
     helpers["verify_cloudfront_file"] = lambda *_: True
     helpers["summary"] = lambda *_: None
     helpers["create_cloudfront_invalidation"] = lambda distribution, paths, reason: (
@@ -268,10 +390,12 @@ def test_parallel_sibling_folders_do_not_trigger_invalidation(tmp_path):
         "ubuntu24/arm64",
     ):
         key = f"core/main/abc/pciehost/{folder}/package"
-        checksum, existing = helpers["publish_file"]("bucket", key, path, True)
+        _checksum, existing, identity = helpers["publish_file"](
+            "bucket", key, path, True
+        )
         assert not existing
         helpers["ensure_cloudfront_consistency"](
-            "dist", "https://cdn", {"/" + key: checksum}, []
+            "dist", "https://cdn", {"/" + key: identity}, []
         )
     assert len(objects) == 4
     assert invalidations == []
@@ -330,7 +454,12 @@ def test_embedded_publisher_barrier_including_manifest(
         monkeypatch.delenv(name, raising=False)
     calls = []
     helpers["publish_file"] = lambda bucket, key, path, allow: (
-        calls.append(("publish", key)) or (helpers["sha256_file"](path), True)
+        calls.append(("publish", key))
+        or (
+            helpers["sha256_file"](path),
+            True,
+            {"etag": "tag", "size": path.stat().st_size},
+        )
     )
     helpers["fetch_branches"] = lambda *_: (
         calls.append(("fetch-index",)) or {"branches": []}
@@ -365,3 +494,132 @@ def test_embedded_publisher_barrier_including_manifest(
             "fetch-index",
             "upload-index",
         ]
+
+
+@pytest.mark.parametrize("folder", ["", ".", "./", " amd64/ubuntu ", "amd64-ubuntu"])
+def test_lock_uses_normalized_destination(tmp_path, monkeypatch, folder):
+    output = tmp_path / "outputs"
+    env = {
+        "ARTIFACT_BUCKET": "bucket",
+        "ARTIFACT_NAMESPACE": " core ",
+        "ARTIFACT_FOLDER_INPUT": folder,
+        "SOURCE_BRANCH_INPUT": " main ",
+        "SOURCE_COMMIT_INPUT": "a" * 40,
+        "GITHUB_OUTPUT": str(output),
+    }
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    code = re.search(
+        r"python3 - <<'PYCODE'\n(.*?)^          PYCODE$",
+        workflow(),
+        re.MULTILINE | re.DOTALL,
+    )
+    assert code
+    exec(textwrap.dedent(code[1]), {})  # noqa: S102 - execute repository-owned normalizer
+    expected_folder = "" if folder in {"", ".", "./"} else "amd64-ubuntu"
+    destination = ["bucket", "core", "main", "a" * 12, expected_folder]
+    assert (
+        output.read_text()
+        == "lock=" + hashlib.sha256(json.dumps(destination).encode()).hexdigest() + "\n"
+    )
+    assert "group: vulcan-publish-${{ needs.prepare.outputs.lock }}" in workflow()
+
+
+def test_multipart_head_checks_composite_without_download(tmp_path):
+    helpers = publisher_helpers()
+    size = 5 * 1024 * 1024
+    data = b"a" * size + b"b" * 17
+    path = tmp_path / "package"
+    path.write_bytes(data)
+    parts = [hashlib.sha256(data[:size]).digest(), hashlib.sha256(data[size:]).digest()]
+    checksum = (
+        base64.b64encode(hashlib.sha256(b"".join(parts)).digest()).decode() + "-2"
+    )
+    head = {
+        "ContentLength": len(data),
+        "ChecksumSHA256": checksum,
+        "Metadata": {"vulcan-part-size": str(size)},
+    }
+    assert helpers["same_s3_content"](
+        "bucket", "key", path, head, hashlib.sha256(data).hexdigest()
+    )
+    head["ChecksumSHA256"] = "wrong-2"
+    assert not helpers["same_s3_content"](
+        "bucket", "key", path, head, hashlib.sha256(data).hexdigest()
+    )
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_cross_owner_rerun_preserves_manifest(tmp_path, monkeypatch, legacy):
+    helpers = publisher_helpers()
+    monkeypatch.chdir(tmp_path)
+    download = tmp_path / "download"
+    download.mkdir()
+    (download / "artifact").write_bytes(b"artifact")
+    for key, value in {
+        "GITHUB_REPOSITORY": "external/repo",
+        "ARTIFACT_NAMESPACE": "repo",
+        "GITHUB_REF_NAME": "main",
+        "GITHUB_SHA": "a" * 40,
+        "ARTIFACT_FOLDER_INPUT": "",
+        "DOWNLOAD_PATH": str(download),
+        "ARTIFACT_GLOB": "*",
+        "MIN_ARTIFACT_COUNT": "1",
+        "ARTIFACT_BUCKET": "bucket",
+        "CLOUDFRONT_DISTRIBUTION_ID": "",
+        "PUBLISH_MANIFEST": "true",
+        "GITHUB_RUN_ID": "1",
+        "GITHUB_RUN_ATTEMPT": "1",
+        "GH_TOKEN": "fake",
+    }.items():
+        monkeypatch.setenv(key, value)
+    for key in ("SOURCE_BRANCH_INPUT", "SOURCE_COMMIT_INPUT", "GITHUB_HEAD_REF"):
+        monkeypatch.delenv(key, raising=False)
+    objects, puts = {}, []
+
+    def aws(operation, *args):
+        key = args[args.index("--key") + 1] if "--key" in args else None
+        if operation == "list-objects-v2":
+            prefix = args[args.index("--prefix") + 1]
+            return {
+                "Contents": [
+                    {"Key": k} for k in sorted(objects) if k.startswith(prefix)
+                ][:1]
+            }
+        if operation == "head-object":
+            return object_head(objects[key])
+        if operation == "get-object":
+            Path(args[-1]).write_bytes(objects[key])
+            return {}
+        if operation == "put-object":
+            assert "--if-none-match" in args
+            assert key not in objects
+            objects[key] = Path(args[args.index("--body") + 1]).read_bytes()
+            puts.append(key)
+            return {}
+        pytest.fail(operation)
+
+    helpers["s3_json"] = aws
+    helpers["run"] = lambda *_: None
+    helpers["summary"] = lambda *_: None
+    helpers["fetch_branches"] = lambda *_: {"branches": []}
+    code = re.search(
+        r"^          github_repo =.*?(?=^          PY$)",
+        workflow(),
+        re.MULTILINE | re.DOTALL,
+    )
+    assert code
+    exec(textwrap.dedent(code[0]), helpers)  # noqa: S102 - execute repository-owned publisher
+    manifest_key = next(key for key in objects if key.endswith("manifest.json"))
+    if legacy:
+        doc = json.loads(objects[manifest_key])
+        doc.update(run_id="1", run_attempt="1", published_at_utc="original")
+        objects[manifest_key] = json.dumps(doc).encode()
+    original = objects[manifest_key]
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    exec(textwrap.dedent(code[0]), helpers)  # noqa: S102 - execute repository-owned publisher
+    assert len(puts) == 2  # No artifact or manifest upload on the rerun.
+    assert objects[manifest_key] == original
+    (download / "artifact").write_bytes(b"changed")
+    with pytest.raises(SystemExit, match="without CDN invalidation"):
+        exec(textwrap.dedent(code[0]), helpers)  # noqa: S102 - execute repository-owned publisher

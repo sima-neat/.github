@@ -23,7 +23,7 @@ The shared workflow accepts `channel`, `suite`, `architecture`, `artifact_name`,
 `expected_sha256`, `package_name`, `package_version`, `source_repository`,
 `source_ref`, `source_commit`, `build_sequence`, `build_provenance`,
 `lifecycle_class`, `submission_role_arn`, `intake_bucket`,
-`publisher_state_machine_arn`, `channel_url`, `archive_key_fingerprint`, and
+`intake_state_machine_arn`, `channel_url`, `archive_key_fingerprint`, and
 `archive_key_url`. `aws_region` defaults to `us-west-2`. Supported suites are
 `bookworm` and `agate`; architectures are `amd64`, `arm64`, and `all`.
 
@@ -88,7 +88,7 @@ jobs:
       lifecycle_class: branch
       submission_role_arn: ${{ vars.VULCAN_DEBIAN_STAGING_DEVELOP_SUBMISSION_ROLE_ARN }}
       intake_bucket: ${{ vars.VULCAN_DEBIAN_STAGING_INTAKE_BUCKET }}
-      publisher_state_machine_arn: ${{ vars.VULCAN_DEBIAN_STAGING_DEVELOP_STATE_MACHINE_ARN }}
+      intake_state_machine_arn: ${{ vars.VULCAN_DEBIAN_STAGING_DEVELOP_STATE_MACHINE_ARN }}
       channel_url: https://debian.stg.neat.sima.ai/develop
       archive_key_fingerprint: ${{ vars.VULCAN_DEBIAN_STAGING_DEVELOP_KEY_FINGERPRINT }}
       archive_key_url: https://debian.stg.neat.sima.ai/keys/develop-2026.asc
@@ -106,27 +106,39 @@ The sima-cli producer wiring and exact version generator belong to sima-cli #246
 
 For each producer and channel, Vulcan needs a distinct OIDC role trusted only
 for the producer repository and its protected `debian-apt-develop` or
-`debian-apt-official` GitHub environment. Restrict that environment to approved
-refs; official should require release approval. Fork and PR events cannot reach
-this workflow's AWS step. The role may `PutObject` with `If-None-Match: *` only
-under `submissions/<owner>/<repo>/<channel>/`, and may start/read only the
-channel's intake state machine. It must have **no** served-bucket write,
+`debian-apt-official` GitHub environment. **Create and verify those environments
+and their deployment-ref rules before granting either AWS role**: GitHub will
+otherwise auto-create a referenced environment without protection rules.
+Restrict the develop environment to approved branches and the official one to
+approved release tags with required reviewers. Where feasible, customize the
+OIDC subject to include `job_workflow_ref` and bind the role to a reviewed
+revision of this reusable workflow; a bare repository/environment subject
+also permits other jobs in that repository to assume the submission role.
+Fork and PR events cannot reach this workflow's AWS step. The role may
+`PutObject` with `If-None-Match: *` only under
+`submissions/<owner>/<repo>/<channel>/`, and may start/read only the
+producer/channel-specific intake state machine. It must have **no** served-bucket write,
 `dists/` write, signing-secret read, or arbitrary CodeBuild/Step Functions
-execution override. IAM must also restrict package names for each producer at
-the trusted publisher, because S3 prefixes and signing keys cannot enforce that.
+execution override. The trusted publisher must restrict package names for each
+producer, because S3 prefixes and signing keys cannot enforce that.
 
 The workflow writes `package.deb` and `manifest.json` to a unique immutable
 `submissions/<owner>/<repo>/<channel>/<submission-id>/` prefix, then starts a
-Standard Step Functions execution named by that ID. Input contains only
-`schema_version`, `manifest_bucket`, `manifest_key`, `package_key`, and
-`submission_id`. Vulcan must validate input keys against the authenticated
-producer's namespace, rehash and parse the `.deb`, enforce package ownership,
+Standard Step Functions execution named by that ID. Each producer/channel
+intake state machine must have the expected repository, channel, bucket, and
+allowed package names fixed in its trusted configuration, then invoke the
+common channel publisher under the channel lock. A shared state machine that
+accepts an arbitrary manifest key cannot infer the caller's IAM role from the
+execution input and would let one producer point it at another producer's
+submission. Input contains only `schema_version`, `manifest_bucket`,
+`manifest_key`, `package_key`, and
+`submission_id`. Vulcan must validate input keys against the state machine's
+fixed producer namespace, rehash and parse the `.deb`, enforce package ownership,
 ref/channel policy and duplicate-version rules, and run one authoritative
 publisher per channel under the existing DynamoDB channel lock. A successful
 execution returns JSON with `channel_url`, `package_url`, `sha256`,
 `suite`, `architecture`, `package_name`, `package_version`, `source_commit`,
-and `branch_token`. The
-state machine must not return success until indexing/signing is complete and
+and `branch_token`. The state machine must not return success until indexing/signing is complete and
 public verification succeeds. An execution failure or 30-minute timeout is a
 caller failure; retain immutable intake and execution logs for retry/audit.
 Retry a failed producer run with a new run attempt. Vulcan should reconcile a

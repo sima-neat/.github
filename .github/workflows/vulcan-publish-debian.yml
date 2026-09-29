@@ -67,8 +67,8 @@ on:
         description: Private Vulcan immutable submission bucket.
         required: true
         type: string
-      publisher_state_machine_arn:
-        description: Central Vulcan publisher state machine for this channel.
+      intake_state_machine_arn:
+        description: Producer/channel-specific authenticated intake state machine that invokes the central publisher.
         required: true
         type: string
       channel_url:
@@ -167,7 +167,7 @@ jobs:
           build_provenance: ${{ inputs.build_provenance }}
           lifecycle_class: ${{ inputs.lifecycle_class }}
           intake_bucket: ${{ inputs.intake_bucket }}
-          publisher_state_machine_arn: ${{ inputs.publisher_state_machine_arn }}
+          intake_state_machine_arn: ${{ inputs.intake_state_machine_arn }}
           channel_url: ${{ inputs.channel_url }}
           archive_key_fingerprint: ${{ inputs.archive_key_fingerprint }}
           archive_key_url: ${{ inputs.archive_key_url }}

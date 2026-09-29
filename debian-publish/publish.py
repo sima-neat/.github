@@ -195,7 +195,6 @@ def verify_public(record: dict, result: dict, package: Path) -> None:
         keyring = root / "archive.gpg"
         inrelease = root / "InRelease"
         release = root / "Release"
-        index = root / "Packages"
         public_package = root / "package.deb"
         download(os.environ["ARCHIVE_KEY_URL"], key)
         key_listing = command("gpg", "--batch", "--with-colons", "--show-keys", str(key)).upper()
@@ -215,31 +214,51 @@ def verify_public(record: dict, result: dict, package: Path) -> None:
         require(expiry is not None, "signed Release lacks Valid-Until")
         expiry_time = dt.datetime.strptime(expiry.group(1), "%a, %d %b %Y %H:%M:%S UTC").replace(tzinfo=dt.timezone.utc)
         require(expiry_time > dt.datetime.now(dt.timezone.utc), "signed Release has expired")
-        index_rel = f"main/binary-{record['architecture'] if record['architecture'] != 'all' else 'amd64'}/Packages"
-        index_digest = None
-        for line in release_text.splitlines():
-            parts = line.split()
-            if len(parts) == 3 and parts[2] == index_rel and SHA_RE.fullmatch(parts[0]):
-                index_digest = parts[0]
-        require(index_digest is not None, "signed Release does not index target architecture")
-        download(f"{channel_url}/dists/{record['suite']}/{index_rel}", index)
-        require(digest(index) == index_digest, "public Packages index does not match signed Release")
-        expected = {"Package": record["package_name"], "Version": record["package_version"],
-                    "SHA256": record["sha256"]}
-        require(any(all(f"{key}: {value}" in stanza.splitlines() for key, value in expected.items())
-                    for stanza in index.read_text().split("\n\n")),
-                "published package is missing from signed Packages index")
         download(package_url, public_package)
         require(digest(public_package) == digest(package), "public .deb differs from submitted artifact")
+        expected_filename = urlparse(package_url).path.removeprefix(urlparse(channel_url).path + "/")
+        require(expected_filename.startswith("pool/"), "package URL is not a channel-relative pool path")
+        arches = ("amd64", "arm64") if record["architecture"] == "all" else (record["architecture"],)
+        for arch in arches:
+            index_rel = f"main/binary-{arch}/Packages"
+            index_metadata = None
+            in_sha256 = False
+            for line in release_text.splitlines():
+                if line == "SHA256:":
+                    in_sha256 = True
+                    continue
+                if in_sha256 and line and not line.startswith(" "):
+                    in_sha256 = False
+                if not in_sha256:
+                    continue
+                parts = line.split()
+                if len(parts) == 3 and parts[2] == index_rel and SHA_RE.fullmatch(parts[0]):
+                    index_metadata = parts
+            require(index_metadata is not None, f"signed Release does not index {arch}")
+            index = root / f"Packages-{arch}"
+            download(f"{channel_url}/dists/{record['suite']}/{index_rel}", index)
+            require(digest(index) == index_metadata[0] and index.stat().st_size == int(index_metadata[1]),
+                    "public Packages index does not match signed Release")
+            expected = {
+                "Package": record["package_name"],
+                "Version": record["package_version"],
+                "Architecture": record["architecture"],
+                "SHA256": record["sha256"],
+                "Filename": expected_filename,
+                "Size": str(package.stat().st_size),
+            }
+            require(any(all(f"{key}: {value}" in stanza.splitlines() for key, value in expected.items())
+                        for stanza in index.read_text().split("\n\n")),
+                    f"published package is missing or misdirected in signed {arch} Packages index")
 
 
 def submit(package: Path, record: dict) -> dict:
     bucket = os.environ["INTAKE_BUCKET"]
-    state_machine = os.environ["PUBLISHER_STATE_MACHINE_ARN"]
+    state_machine = os.environ["INTAKE_STATE_MACHINE_ARN"]
     require(re.fullmatch(r"[a-z0-9][a-z0-9.-]{2,62}", bucket) is not None, "invalid intake bucket")
     require(state_machine.startswith("arn:aws:states:") and ":stateMachine:" in state_machine,
             "invalid publisher state machine ARN")
-    repo_key = record["source_repository"].replace("/", "/")
+    repo_key = record["source_repository"]
     prefix = f"submissions/{repo_key}/{record['channel']}/{record['submission_id']}"
     package_key = f"{prefix}/package.deb"
     manifest_key = f"{prefix}/manifest.json"

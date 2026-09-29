@@ -44,8 +44,8 @@ inputs:
   intake_bucket:
     description: intake bucket
     required: false
-  publisher_state_machine_arn:
-    description: publisher state machine arn
+  intake_state_machine_arn:
+    description: producer and channel specific intake state machine arn
     required: false
   channel_url:
     description: channel url
@@ -94,7 +94,7 @@ runs:
         BUILD_PROVENANCE: ${{ inputs.build_provenance }}
         LIFECYCLE_CLASS: ${{ inputs.lifecycle_class }}
         INTAKE_BUCKET: ${{ inputs.intake_bucket }}
-        PUBLISHER_STATE_MACHINE_ARN: ${{ inputs.publisher_state_machine_arn }}
+        INTAKE_STATE_MACHINE_ARN: ${{ inputs.intake_state_machine_arn }}
         CHANNEL_URL: ${{ inputs.channel_url }}
         ARCHIVE_KEY_FINGERPRINT: ${{ inputs.archive_key_fingerprint }}
         ARCHIVE_KEY_URL: ${{ inputs.archive_key_url }}

@@ -6,10 +6,12 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+import datetime as dt
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "debian-publish" / "publish.py"
@@ -133,6 +135,60 @@ class DebianPublishContractTest(unittest.TestCase):
         self.env["EXPECTED_SHA256"] = publisher.digest(self.deb)
         _, second = self.validate()
         self.assertNotEqual(first["submission_id"], second["submission_id"])
+
+    def test_public_verification_checks_signed_index_filename(self):
+        _, record = self.validate()
+        home = Path(self.temp.name) / "gnupg"
+        home.mkdir(mode=0o700)
+        gpg_env = {**os.environ, "GNUPGHOME": str(home)}
+        subprocess.run(["gpg", "--batch", "--pinentry-mode", "loopback", "--passphrase", "",
+                        "--quick-gen-key", "Vulcan Test <test@example.com>", "ed25519", "sign", "0"],
+                       env=gpg_env, check=True, capture_output=True)
+        listing = subprocess.run(["gpg", "--batch", "--with-colons", "--list-keys"], env=gpg_env,
+                                 check=True, capture_output=True, text=True).stdout
+        fingerprint = next(line.split(":")[9] for line in listing.splitlines() if line.startswith("fpr:"))
+        key = Path(self.temp.name) / "key.asc"
+        key.write_bytes(subprocess.run(["gpg", "--batch", "--armor", "--export", fingerprint],
+                                       env=gpg_env, check=True, capture_output=True).stdout)
+        channel_url = "https://debian.stg.neat.sima.ai/official"
+        key_url = "https://debian.stg.neat.sima.ai/keys/official-2026.asc"
+        package_url = f"{channel_url}/pool/bookworm/s/sima-cli/sima-cli_2.1.18_amd64.deb"
+        filename = "pool/bookworm/s/sima-cli/sima-cli_2.1.18_amd64.deb"
+        packages = Path(self.temp.name) / "Packages"
+        release = Path(self.temp.name) / "Release"
+        inrelease = Path(self.temp.name) / "InRelease"
+        def sign_index(index_filename):
+            packages.write_text(
+                "Package: sima-cli\nVersion: 2.1.18\nArchitecture: amd64\n"
+                f"Filename: {index_filename}\nSize: {self.deb.stat().st_size}\n"
+                f"SHA256: {record['sha256']}\n\n"
+            )
+            expiry = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)).strftime("%a, %d %b %Y %H:%M:%S UTC")
+            release.write_text(
+                f"Label: SiMa.ai official\nSuite: bookworm\nValid-Until: {expiry}\nSHA256:\n"
+                f" {publisher.digest(packages)} {packages.stat().st_size} main/binary-amd64/Packages\n"
+            )
+            subprocess.run(["gpg", "--batch", "--yes", "--local-user", fingerprint, "--clearsign",
+                            "--output", str(inrelease), str(release)], env=gpg_env,
+                           check=True, capture_output=True)
+        sign_index(filename)
+        urls = {
+            key_url: key,
+            f"{channel_url}/dists/bookworm/InRelease": inrelease,
+            f"{channel_url}/dists/bookworm/main/binary-amd64/Packages": packages,
+            package_url: self.deb,
+        }
+        def copy_download(url, destination):
+            shutil.copyfile(urls[url], destination)
+        result = {**{key: record[key] for key in
+                     ("suite", "architecture", "package_name", "package_version", "source_commit", "branch_token")},
+                  "channel_url": channel_url, "sha256": record["sha256"], "package_url": package_url}
+        verify_env = {**self.env, "GNUPGHOME": str(home), "ARCHIVE_KEY_FINGERPRINT": fingerprint}
+        with patch.dict(os.environ, verify_env), patch.object(publisher, "download", side_effect=copy_download):
+            publisher.verify_public(record, result, self.deb)
+            sign_index("pool/bookworm/s/sima-cli/different.deb")
+            with self.assertRaisesRegex(ValueError, "misdirected"):
+                publisher.verify_public(record, result, self.deb)
 
 
 if __name__ == "__main__":

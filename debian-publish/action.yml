@@ -57,6 +57,7 @@ inputs:
     description: archive key url
     required: true
 name: Validate and submit a Debian package to Vulcan
+description: Validate a Debian artifact, submit it to Vulcan, and verify its signed APT publication.
 outputs:
   published_version:
     description: published version

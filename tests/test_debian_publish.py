@@ -190,6 +190,21 @@ class DebianPublishContractTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "misdirected"):
                 publisher.verify_public(record, result, self.deb)
 
+    def test_retries_transient_signature_verification_failure(self):
+        signature_failure = subprocess.CalledProcessError(1, ["gpgv", "InRelease"])
+        with patch.object(publisher, "verify_public", side_effect=[signature_failure, None]) as verify, \
+             patch.object(publisher.time, "sleep") as sleep:
+            publisher.verify_public_until({}, {}, self.deb, publisher.time.monotonic() + 60)
+        self.assertEqual(verify.call_count, 2)
+        sleep.assert_called_once_with(10)
+
+    def test_persistent_signature_failure_still_fails(self):
+        signature_failure = subprocess.CalledProcessError(1, ["gpgv", "InRelease"])
+        with patch.object(publisher, "verify_public", side_effect=signature_failure), \
+             patch.object(publisher.time, "monotonic", return_value=100):
+            with self.assertRaisesRegex(RuntimeError, "did not converge"):
+                publisher.verify_public_until({}, {}, self.deb, 100)
+
 
 if __name__ == "__main__":
     unittest.main()

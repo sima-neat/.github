@@ -252,6 +252,17 @@ def verify_public(record: dict, result: dict, package: Path) -> None:
                     f"published package is missing or misdirected in signed {arch} Packages index")
 
 
+def verify_public_until(record: dict, result: dict, package: Path, deadline: float) -> None:
+    while True:
+        try:
+            verify_public(record, result, package)
+            return
+        except (ValueError, urllib.error.URLError, subprocess.CalledProcessError) as error:
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"public APT verification did not converge: {error}") from error
+            time.sleep(10)
+
+
 def submit(package: Path, record: dict) -> dict:
     bucket = os.environ["INTAKE_BUCKET"]
     state_machine = os.environ["INTAKE_STATE_MACHINE_ARN"]
@@ -287,14 +298,8 @@ def submit(package: Path, record: dict) -> dict:
             if state["status"] == "SUCCEEDED":
                 result = json.loads(state["output"])
                 verify_deadline = min(deadline, time.monotonic() + 3 * 60)
-                while True:
-                    try:
-                        verify_public(record, result, package)
-                        return result
-                    except (ValueError, urllib.error.URLError) as error:
-                        if time.monotonic() >= verify_deadline:
-                            raise RuntimeError(f"public APT verification did not converge: {error}") from error
-                        time.sleep(10)
+                verify_public_until(record, result, package, verify_deadline)
+                return result
             if state["status"] in {"FAILED", "TIMED_OUT", "ABORTED"}:
                 raise RuntimeError(f"Vulcan publisher {state['status']}: {state.get('error', '')} {state.get('cause', '')}")
             time.sleep(15)

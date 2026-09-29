@@ -12,6 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import datetime as dt
+import http.client
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "debian-publish" / "publish.py"
@@ -211,6 +212,17 @@ class DebianPublishContractTest(unittest.TestCase):
             publisher.verify_public_until({}, {}, self.deb, publisher.time.monotonic() + 60)
         self.assertEqual(verify.call_count, 2)
         sleep.assert_called_once_with(10)
+
+    def test_retries_interrupted_response_body(self):
+        failures = (http.client.IncompleteRead(b"partial", 10),
+                    ConnectionResetError("connection reset"))
+        for failure in failures:
+            with self.subTest(failure=type(failure).__name__), \
+                 patch.object(publisher, "verify_public", side_effect=[failure, None]) as verify, \
+                 patch.object(publisher.time, "sleep") as sleep:
+                publisher.verify_public_until({}, {}, self.deb, publisher.time.monotonic() + 60)
+                self.assertEqual(verify.call_count, 2)
+                sleep.assert_called_once_with(10)
 
     def test_successful_execution_gets_full_public_verification_window(self):
         _, record = self.validate()

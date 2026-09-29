@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
 import re
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -257,7 +259,8 @@ def verify_public_until(record: dict, result: dict, package: Path, deadline: flo
         try:
             verify_public(record, result, package)
             return
-        except (ValueError, urllib.error.URLError, TimeoutError, subprocess.CalledProcessError) as error:
+        except (ValueError, urllib.error.URLError, TimeoutError, ConnectionError,
+                http.client.HTTPException, ssl.SSLError, subprocess.CalledProcessError) as error:
             if time.monotonic() >= deadline:
                 raise RuntimeError(f"public APT verification did not converge: {error}") from error
             time.sleep(10)

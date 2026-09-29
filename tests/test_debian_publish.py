@@ -137,6 +137,13 @@ class DebianPublishContractTest(unittest.TestCase):
         _, second = self.validate()
         self.assertNotEqual(first["submission_id"], second["submission_id"])
 
+    def test_same_package_in_two_suites_has_distinct_submission_ids(self):
+        _, bookworm = self.validate()
+        self.env["SUITE"] = "agate"
+        _, agate = self.validate()
+        self.assertNotEqual(bookworm["submission_id"], agate["submission_id"])
+        self.assertEqual(agate["submission_id"], self.validate()[1]["submission_id"])
+
     def test_public_verification_checks_signed_index_filename(self):
         _, record = self.validate()
         home = Path(self.temp.name) / "gnupg"

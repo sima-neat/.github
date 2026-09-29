@@ -152,7 +152,7 @@ def validate() -> tuple[Path, dict]:
     require(urlparse(key_url).netloc == urlparse(channel_url).netloc,
             "archive key and channel must use the same host")
     submission_id = hashlib.sha256(
-        f"{repo}\0{channel}\0{sequence}\0{expected}".encode()
+        f"{repo}\0{channel}\0{suite}\0{sequence}\0{expected}".encode()
     ).hexdigest()[:32]
     record = {
         "schema_version": 1,

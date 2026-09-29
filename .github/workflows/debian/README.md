@@ -12,9 +12,11 @@ Vulcan channel publisher role: that role has signing and repository-write access
 
 ## Caller contract
 
-Pin the reusable workflow to a reviewed commit SHA. The local `$/debian-publish`
-composite action resolves from the same commit as the called workflow, including
-when the caller pins the workflow. The caller must grant `actions: read` and
+Pin the reusable workflow to a reviewed commit SHA. Both composite-action steps
+use an explicit `sima-neat/.github/debian-publish@<40-character-commit-SHA>`
+reference. The action pin is independent of the workflow pin; both action steps
+must use the same reviewed action revision. No caller checkout is required.
+The caller must grant `actions: read` and
 `id-token: write`; it must not grant `contents: write` or pass secrets. Upload
 exactly one `.deb` into the named artifact. Supply its SHA256 from the build job,
 not a value computed from the downloaded artifact in the publish job.
@@ -166,3 +168,22 @@ same pinned workflow. Never share a submission role between unrelated source
 repositories. Run focused allow/deny contract tests here and concurrency,
 replay, collision, and fail-after-commit tests in Vulcan before enabling either
 channel for a producer.
+
+## Local validation and action updates
+
+Run the publisher suite and workflow checks before pushing:
+
+```sh
+python -m pip install PyYAML check-jsonschema
+python -m unittest discover -s tests -p 'test_debian*.py' -v
+check-jsonschema --builtin-schema vendor.github-actions debian-publish/action.yml
+actionlint .github/workflows/vulcan-publish-debian.yml .github/workflows/test-debian-publisher.yml
+```
+
+CI runs the same checks against the unmodified workflow. When changing files under
+`debian-publish/`, commit the action changes first, then update both workflow action
+references to that commit in a follow-up commit before pushing the branch. The
+contract test compares the pinned action tree with the working tree and rejects a
+stale pin. CI fetches the exact action commit so this check also works after a
+squash merge. This validates action code availability and workflow contracts;
+AWS publication still requires the separate staging integration test.

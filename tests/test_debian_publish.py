@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
+import datetime as dt
+import http.client
 import importlib.util
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
-import datetime as dt
-import http.client
-
 
 SCRIPT = Path(__file__).resolve().parents[1] / "debian-publish" / "publish.py"
 spec = importlib.util.spec_from_file_location("debian_publish", SCRIPT)
@@ -182,16 +181,16 @@ class DebianPublishContractTest(unittest.TestCase):
         packages = Path(self.temp.name) / "Packages"
         release = Path(self.temp.name) / "Release"
         inrelease = Path(self.temp.name) / "InRelease"
-        def sign_index(index_filename, *, suite="bookworm", label="SiMa.ai official"):
+        def sign_index(index_filename, *, suite="bookworm", label="SiMa.ai official", arches=("amd64",), expired=False):
             packages.write_text(
-                "Package: sima-cli\nVersion: 2.1.18\nArchitecture: amd64\n"
+                f"Package: sima-cli\nVersion: 2.1.18\nArchitecture: {record['architecture']}\n"
                 f"Filename: {index_filename}\nSize: {self.deb.stat().st_size}\n"
                 f"SHA256: {record['sha256']}\n\n"
             )
-            expiry = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)).strftime("%a, %d %b %Y %H:%M:%S UTC")
+            expiry = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=-1 if expired else 1)).strftime("%a, %d %b %Y %H:%M:%S UTC")
             release.write_text(
                 f"Label: {label}\nSuite: {suite}\nValid-Until: {expiry}\nSHA256:\n"
-                f" {publisher.digest(packages)} {packages.stat().st_size} main/binary-amd64/Packages\n"
+                 + "".join(f" {publisher.digest(packages)} {packages.stat().st_size} main/binary-{arch}/Packages\n" for arch in arches)
             )
             subprocess.run(["gpg", "--batch", "--yes", "--local-user", fingerprint, "--clearsign",
                             "--output", str(inrelease), str(release)], env=gpg_env,
@@ -221,6 +220,31 @@ class DebianPublishContractTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "label mismatch"):
                 publisher.verify_public(record, result, self.deb)
 
+            sign_index(filename, expired=True)
+            with self.assertRaisesRegex(ValueError, "expired"):
+                publisher.verify_public(record, result, self.deb)
+            sign_index(filename)
+            packages.write_text(packages.read_text() + "corrupted")
+            with self.assertRaisesRegex(ValueError, "does not match signed Release"):
+                publisher.verify_public(record, result, self.deb)
+            sign_index(filename)
+            with patch.dict(os.environ, {"ARCHIVE_KEY_FINGERPRINT": "0" * 40}), \
+                 self.assertRaisesRegex(ValueError, "fingerprint mismatch"):
+                publisher.verify_public(record, result, self.deb)
+            bad_package = Path(self.temp.name) / "tampered.deb"
+            bad_package.write_bytes(b"not the submitted bytes")
+            urls[package_url] = bad_package
+            with self.assertRaisesRegex(ValueError, "differs from submitted"):
+                publisher.verify_public(record, result, self.deb)
+            urls[package_url] = self.deb
+            record["architecture"] = result["architecture"] = "all"
+            urls[f"{channel_url}/dists/bookworm/main/binary-arm64/Packages"] = packages
+            sign_index(filename, arches=("amd64", "arm64"))
+            publisher.verify_public(record, result, self.deb)
+            sign_index(filename, arches=("amd64",))
+            with self.assertRaisesRegex(ValueError, "does not index arm64"):
+                publisher.verify_public(record, result, self.deb)
+
     def test_retries_transient_signature_verification_failure(self):
         signature_failure = subprocess.CalledProcessError(1, ["gpgv", "InRelease"])
         with patch.object(publisher, "verify_public", side_effect=[signature_failure, None]) as verify, \
@@ -232,9 +256,9 @@ class DebianPublishContractTest(unittest.TestCase):
     def test_persistent_signature_failure_still_fails(self):
         signature_failure = subprocess.CalledProcessError(1, ["gpgv", "InRelease"])
         with patch.object(publisher, "verify_public", side_effect=signature_failure), \
-             patch.object(publisher.time, "monotonic", return_value=100):
-            with self.assertRaisesRegex(RuntimeError, "did not converge"):
-                publisher.verify_public_until({}, {}, self.deb, 100)
+             patch.object(publisher.time, "monotonic", return_value=100), \
+             self.assertRaisesRegex(RuntimeError, "did not converge"):
+            publisher.verify_public_until({}, {}, self.deb, 100)
 
     def test_retries_response_body_timeout(self):
         with patch.object(publisher, "verify_public", side_effect=[TimeoutError("body stalled"), None]) as verify, \
@@ -269,6 +293,71 @@ class DebianPublishContractTest(unittest.TestCase):
              patch.object(publisher, "verify_public_until") as verify:
             publisher.submit(self.deb, record)
         self.assertEqual(verify.call_args.args[3], 1740 + 3 * 60)
+
+    def test_submission_uses_immutable_scoped_objects_and_fixed_execution_input(self):
+        _, record = self.validate()
+        calls = []
+        def fake_aws(service, operation, *args):
+            calls.append((service, operation, args))
+            if operation == "put-object":
+                self.assertEqual(args[args.index("--if-none-match") + 1], "*")
+                key = args[args.index("--key") + 1]
+                self.assertTrue(key.startswith(f"submissions/{record['source_repository']}/official/{record['submission_id']}/"))
+                if key.endswith("manifest.json"):
+                    manifest = json.loads(Path(args[args.index("--body") + 1]).read_text())
+                    self.assertEqual(manifest, record)
+            if operation == "start-execution":
+                execution_input = json.loads(args[args.index("--input") + 1])
+                self.assertEqual(set(execution_input), {"schema_version", "manifest_bucket", "manifest_key", "package_key", "submission_id"})
+                return {"executionArn": "execution"}
+            if operation == "describe-execution":
+                return {"status": "SUCCEEDED", "output": "{}"}
+            return {}
+        env = {**self.env, "INTAKE_BUCKET": "vulcan-apt-intake",
+               "INTAKE_STATE_MACHINE_ARN": "arn:aws:states:us-west-2:123456789012:stateMachine:intake"}
+        with patch.dict(os.environ, env), patch.object(publisher, "aws", side_effect=fake_aws), \
+             patch.object(publisher, "verify_public_until") as verify:
+            publisher.submit(self.deb, record)
+        self.assertEqual([call[1] for call in calls], ["put-object", "put-object", "start-execution", "describe-execution"])
+        verify.assert_called_once()
+
+    def test_failed_execution_never_reports_success(self):
+        _, record = self.validate()
+        env = {**self.env, "INTAKE_BUCKET": "vulcan-apt-intake",
+               "INTAKE_STATE_MACHINE_ARN": "arn:aws:states:us-west-2:123456789012:stateMachine:intake"}
+        for status in ("FAILED", "TIMED_OUT", "ABORTED"):
+            def fake_aws(service, operation, *args, status=status):
+                if operation == "start-execution":
+                    return {"executionArn": "execution"}
+                if operation == "describe-execution":
+                    return {"status": status}
+                return {}
+            with self.subTest(status=status), patch.dict(os.environ, env), \
+                 patch.object(publisher, "aws", side_effect=fake_aws), \
+                 patch.object(publisher, "verify_public_until") as verify:
+                with self.assertRaisesRegex(RuntimeError, status):
+                    publisher.submit(self.deb, record)
+                verify.assert_not_called()
+
+    def test_execution_timeout_never_verifies_publication(self):
+        _, record = self.validate()
+        env = {**self.env, "INTAKE_BUCKET": "vulcan-apt-intake",
+               "INTAKE_STATE_MACHINE_ARN": "arn:aws:states:us-west-2:123456789012:stateMachine:intake"}
+        with patch.dict(os.environ, env), \
+             patch.object(publisher, "aws", return_value={"executionArn": "execution"}), \
+             patch.object(publisher.time, "monotonic", side_effect=[0, 1800]), \
+             patch.object(publisher, "verify_public_until") as verify:
+            with self.assertRaisesRegex(TimeoutError, "30 minutes"):
+                publisher.submit(self.deb, record)
+            verify.assert_not_called()
+
+    def test_submission_failure_does_not_write_outputs(self):
+        output = Path(self.temp.name) / "outputs"
+        with patch.dict(os.environ, {**self.env, "MODE": "submit", "GITHUB_OUTPUT": str(output)}), \
+             patch.object(publisher, "submit", side_effect=RuntimeError("verification failed")), \
+             self.assertRaisesRegex(RuntimeError, "verification failed"):
+            publisher.main()
+        self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":

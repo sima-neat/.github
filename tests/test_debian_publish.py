@@ -76,6 +76,17 @@ class DebianPublishContractTest(unittest.TestCase):
         self.assertEqual(record["package_version"], "2.1.18")
         self.assertEqual(record["source_repository"], "sima-neat/sima-cli")
 
+    def test_accepts_case_insensitive_debian_control_fields(self):
+        control = Path(self.temp.name) / "package/DEBIAN/control"
+        control.write_text(
+            "package: sima-cli\nVERSION: 2.1.18\narchitecture: amd64\n"
+            "maintainer: SiMa.ai <dev@sima.ai>\ndescription: SiMa CLI\n"
+        )
+        subprocess.run(["dpkg-deb", "--build", str(Path(self.temp.name) / "package"), str(self.deb)],
+                       check=True, capture_output=True)
+        self.env["EXPECTED_SHA256"] = publisher.digest(self.deb)
+        self.assertEqual(self.validate()[1]["package_name"], "sima-cli")
+
     def test_develop_branch_has_collision_resistant_token(self):
         ref = "refs/heads/feature/Add-CLI"
         token = publisher.branch_token(ref)

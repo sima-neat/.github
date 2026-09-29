@@ -76,12 +76,13 @@ def control_fields(path: Path) -> dict[str, str]:
         if line.startswith((" ", "\t")):
             continue
         key, sep, value = line.partition(":")
-        require(bool(sep) and key.lower() not in {name.lower() for name in fields},
+        key = key.lower()
+        require(bool(sep) and key not in fields,
                 "invalid or duplicate Debian control field")
         fields[key] = value.strip()
-    for key in ("Package", "Version", "Architecture", "Maintainer", "Description"):
+    for key in ("package", "version", "architecture", "maintainer", "description"):
         require(bool(fields.get(key)), f"package is missing {key}")
-    require(not {name.lower() for name in fields}.intersection({"filename", "size", "sha256", "sha1", "md5sum"}),
+    require(not fields.keys() & {"filename", "size", "sha256", "sha1", "md5sum"},
             "package control contains repository-generated fields")
     # dpkg-deb --contents reads the payload, rather than trusting the ar header alone.
     subprocess.run(["dpkg-deb", "--contents", str(path)], stdout=subprocess.DEVNULL,
@@ -140,9 +141,9 @@ def validate() -> tuple[Path, dict]:
             "package artifact must be a regular file within its directory")
     require(digest(package) == expected, "package SHA256 differs from build output")
     fields = control_fields(package)
-    require(fields["Package"] == name and fields["Version"] == version,
+    require(fields["package"] == name and fields["version"] == version,
             "package control name/version does not match submission")
-    require(fields["Architecture"] == arch, "package control architecture does not match submission")
+    require(fields["architecture"] == arch, "package control architecture does not match submission")
     fingerprint = env["ARCHIVE_KEY_FINGERPRINT"].upper()
     require(re.fullmatch(r"[0-9A-F]{40}", fingerprint) is not None,
             "archive key fingerprint must contain 40 hex digits")

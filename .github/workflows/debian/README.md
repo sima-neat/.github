@@ -135,7 +135,11 @@ submission. Input contains only `schema_version`, `manifest_bucket`,
 `submission_id`. Vulcan must validate input keys against the state machine's
 fixed producer namespace, rehash and parse the `.deb`, enforce package ownership,
 ref/channel policy and duplicate-version rules, and run one authoritative
-publisher per channel under the existing DynamoDB channel lock. A successful
+publisher per channel under the existing DynamoDB channel lock. Vulcan's intake
+must use case-insensitive Debian control-field names, as this workflow
+does; the current Vulcan publisher still requires canonical capitalization and
+is being aligned in [Vulcan PR #220](https://github.com/sima-neat/vulcan/pull/220)
+before accepting such artifacts end to end. A successful
 execution returns JSON with `channel_url`, `package_url`, `sha256`,
 `suite`, `architecture`, `package_name`, `package_version`, `source_commit`,
 and `branch_token`. The state machine must not return success until indexing/signing is complete and

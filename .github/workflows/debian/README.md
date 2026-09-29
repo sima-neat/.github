@@ -141,7 +141,10 @@ execution returns JSON with `channel_url`, `package_url`, `sha256`,
 and `branch_token`. The state machine must not return success until indexing/signing is complete and
 public verification succeeds. An execution failure or 30-minute timeout is a
 caller failure; retain immutable intake and execution logs for retry/audit.
-Retry a failed producer run with a new run attempt. Vulcan should reconcile a
+Retry a failed producer run by rerunning the **entire build-and-publish workflow**
+so the `.deb` version and `build_sequence` use the same new run attempt.
+Rerunning only the failed publish job leaves the earlier artifact version and
+will fail validation. Vulcan should reconcile a
 failed execution before retrying publication, since a failure can occur after
 `InRelease` is committed. A different digest for the same package/version/arch
 must remain a hard collision error; an identical replay may be idempotent.

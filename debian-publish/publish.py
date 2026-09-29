@@ -286,8 +286,15 @@ def submit(package: Path, record: dict) -> dict:
             state = aws("stepfunctions", "describe-execution", "--execution-arn", execution)
             if state["status"] == "SUCCEEDED":
                 result = json.loads(state["output"])
-                verify_public(record, result, package)
-                return result
+                verify_deadline = min(deadline, time.monotonic() + 3 * 60)
+                while True:
+                    try:
+                        verify_public(record, result, package)
+                        return result
+                    except (ValueError, urllib.error.URLError) as error:
+                        if time.monotonic() >= verify_deadline:
+                            raise RuntimeError(f"public APT verification did not converge: {error}") from error
+                        time.sleep(10)
             if state["status"] in {"FAILED", "TIMED_OUT", "ABORTED"}:
                 raise RuntimeError(f"Vulcan publisher {state['status']}: {state.get('error', '')} {state.get('cause', '')}")
             time.sleep(15)

@@ -257,7 +257,7 @@ def verify_public_until(record: dict, result: dict, package: Path, deadline: flo
         try:
             verify_public(record, result, package)
             return
-        except (ValueError, urllib.error.URLError, subprocess.CalledProcessError) as error:
+        except (ValueError, urllib.error.URLError, TimeoutError, subprocess.CalledProcessError) as error:
             if time.monotonic() >= deadline:
                 raise RuntimeError(f"public APT verification did not converge: {error}") from error
             time.sleep(10)
@@ -297,7 +297,7 @@ def submit(package: Path, record: dict) -> dict:
             state = aws("stepfunctions", "describe-execution", "--execution-arn", execution)
             if state["status"] == "SUCCEEDED":
                 result = json.loads(state["output"])
-                verify_deadline = min(deadline, time.monotonic() + 3 * 60)
+                verify_deadline = time.monotonic() + 3 * 60
                 verify_public_until(record, result, package, verify_deadline)
                 return result
             if state["status"] in {"FAILED", "TIMED_OUT", "ABORTED"}:

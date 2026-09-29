@@ -205,6 +205,29 @@ class DebianPublishContractTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "did not converge"):
                 publisher.verify_public_until({}, {}, self.deb, 100)
 
+    def test_retries_response_body_timeout(self):
+        with patch.object(publisher, "verify_public", side_effect=[TimeoutError("body stalled"), None]) as verify, \
+             patch.object(publisher.time, "sleep") as sleep:
+            publisher.verify_public_until({}, {}, self.deb, publisher.time.monotonic() + 60)
+        self.assertEqual(verify.call_count, 2)
+        sleep.assert_called_once_with(10)
+
+    def test_successful_execution_gets_full_public_verification_window(self):
+        _, record = self.validate()
+        def fake_aws(service, operation, *args):
+            if operation == "start-execution":
+                return {"executionArn": "arn:aws:states:us-west-2:123456789012:execution:intake:test"}
+            if operation == "describe-execution":
+                return {"status": "SUCCEEDED", "output": "{}"}
+            return {}
+        env = {**self.env, "INTAKE_BUCKET": "vulcan-apt-intake",
+               "INTAKE_STATE_MACHINE_ARN": "arn:aws:states:us-west-2:123456789012:stateMachine:intake"}
+        with patch.dict(os.environ, env), patch.object(publisher, "aws", side_effect=fake_aws), \
+             patch.object(publisher.time, "monotonic", side_effect=[0, 1740, 1740]), \
+             patch.object(publisher, "verify_public_until") as verify:
+            publisher.submit(self.deb, record)
+        self.assertEqual(verify.call_args.args[3], 1740 + 3 * 60)
+
 
 if __name__ == "__main__":
     unittest.main()

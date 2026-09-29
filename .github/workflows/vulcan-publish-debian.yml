@@ -1,0 +1,173 @@
+name: Vulcan Publish Debian Package
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        description: develop or official.
+        required: true
+        type: string
+      suite:
+        description: Debian suite, for example bookworm or agate.
+        required: true
+        type: string
+      architecture:
+        description: Debian package architecture (amd64, arm64, or all).
+        required: true
+        type: string
+      artifact_name:
+        description: Name of the uploaded GitHub Actions artifact containing exactly one .deb.
+        required: true
+        type: string
+      expected_sha256:
+        description: SHA256 of the .deb produced by the build job.
+        required: true
+        type: string
+      package_name:
+        description: Expected Package control field.
+        required: true
+        type: string
+      package_version:
+        description: Expected Version control field.
+        required: true
+        type: string
+      source_repository:
+        description: Repository that built the package; must equal the caller repository.
+        required: true
+        type: string
+      source_ref:
+        description: Full build ref; must equal the caller ref.
+        required: true
+        type: string
+      source_commit:
+        description: Full build commit; must equal the caller SHA.
+        required: true
+        type: string
+      build_sequence:
+        description: Unique build sequence within the source repository.
+        required: true
+        type: string
+      build_provenance:
+        description: JSON object with build provenance (toolchain, source workflow, etc.).
+        required: true
+        type: string
+      lifecycle_class:
+        description: branch, release-candidate, or official.
+        required: true
+        type: string
+      aws_region:
+        required: false
+        default: us-west-2
+        type: string
+      submission_role_arn:
+        description: Repository/channel-specific OIDC role with intake write and StartExecution only.
+        required: true
+        type: string
+      intake_bucket:
+        description: Private Vulcan immutable submission bucket.
+        required: true
+        type: string
+      publisher_state_machine_arn:
+        description: Central Vulcan publisher state machine for this channel.
+        required: true
+        type: string
+      channel_url:
+        description: Public HTTPS channel URL.
+        required: true
+        type: string
+      archive_key_fingerprint:
+        description: Expected 40-hex-character OpenPGP fingerprint for public verification.
+        required: true
+        type: string
+      archive_key_url:
+        description: Public HTTPS URL of the channel archive key.
+        required: true
+        type: string
+    outputs:
+      published_version:
+        value: ${{ jobs.publish.outputs.published_version }}
+      package_url:
+        value: ${{ jobs.publish.outputs.package_url }}
+      package_sha256:
+        value: ${{ jobs.publish.outputs.package_sha256 }}
+      channel_url:
+        value: ${{ jobs.publish.outputs.channel_url }}
+      branch_token:
+        value: ${{ jobs.publish.outputs.branch_token }}
+
+permissions:
+  actions: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Submit to Vulcan ${{ inputs.channel }} publisher
+    if: >-
+      github.repository_owner == 'sima-neat' &&
+      github.event_name != 'pull_request' &&
+      github.event_name != 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: ${{ inputs.channel == 'official' && 'debian-apt-official' || 'debian-apt-develop' }}
+    outputs:
+      published_version: ${{ steps.submit.outputs.published_version }}
+      package_url: ${{ steps.submit.outputs.package_url }}
+      package_sha256: ${{ steps.submit.outputs.package_sha256 }}
+      channel_url: ${{ steps.submit.outputs.channel_url }}
+      branch_token: ${{ steps.submit.outputs.branch_token }}
+    steps:
+      - name: Download one package artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: _vulcan/debian-package
+      - name: Validate package and source identity
+        uses: $/debian-publish
+        id: validate
+        with:
+          mode: validate
+          package_directory: _vulcan/debian-package
+          channel: ${{ inputs.channel }}
+          suite: ${{ inputs.suite }}
+          architecture: ${{ inputs.architecture }}
+          expected_sha256: ${{ inputs.expected_sha256 }}
+          package_name: ${{ inputs.package_name }}
+          package_version: ${{ inputs.package_version }}
+          source_repository: ${{ inputs.source_repository }}
+          source_ref: ${{ inputs.source_ref }}
+          source_commit: ${{ inputs.source_commit }}
+          build_sequence: ${{ inputs.build_sequence }}
+          build_provenance: ${{ inputs.build_provenance }}
+          lifecycle_class: ${{ inputs.lifecycle_class }}
+          channel_url: ${{ inputs.channel_url }}
+          archive_key_fingerprint: ${{ inputs.archive_key_fingerprint }}
+          archive_key_url: ${{ inputs.archive_key_url }}
+      - name: Assume narrow submission role
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-region: ${{ inputs.aws_region }}
+          role-to-assume: ${{ inputs.submission_role_arn }}
+          role-session-name: debian-${{ github.run_id }}
+      - name: Submit and verify signed publication
+        uses: $/debian-publish
+        id: submit
+        with:
+          mode: submit
+          package_directory: _vulcan/debian-package
+          channel: ${{ inputs.channel }}
+          suite: ${{ inputs.suite }}
+          architecture: ${{ inputs.architecture }}
+          expected_sha256: ${{ inputs.expected_sha256 }}
+          package_name: ${{ inputs.package_name }}
+          package_version: ${{ inputs.package_version }}
+          source_repository: ${{ inputs.source_repository }}
+          source_ref: ${{ inputs.source_ref }}
+          source_commit: ${{ inputs.source_commit }}
+          build_sequence: ${{ inputs.build_sequence }}
+          build_provenance: ${{ inputs.build_provenance }}
+          lifecycle_class: ${{ inputs.lifecycle_class }}
+          intake_bucket: ${{ inputs.intake_bucket }}
+          publisher_state_machine_arn: ${{ inputs.publisher_state_machine_arn }}
+          channel_url: ${{ inputs.channel_url }}
+          archive_key_fingerprint: ${{ inputs.archive_key_fingerprint }}
+          archive_key_url: ${{ inputs.archive_key_url }}

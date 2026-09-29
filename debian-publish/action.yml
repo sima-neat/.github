@@ -1,0 +1,101 @@
+inputs:
+  mode:
+    description: mode
+    required: true
+  package_directory:
+    description: package directory
+    required: true
+  channel:
+    description: channel
+    required: true
+  suite:
+    description: suite
+    required: true
+  architecture:
+    description: architecture
+    required: true
+  expected_sha256:
+    description: expected sha256
+    required: true
+  package_name:
+    description: package name
+    required: true
+  package_version:
+    description: package version
+    required: true
+  source_repository:
+    description: source repository
+    required: true
+  source_ref:
+    description: source ref
+    required: true
+  source_commit:
+    description: source commit
+    required: true
+  build_sequence:
+    description: build sequence
+    required: true
+  build_provenance:
+    description: build provenance
+    required: true
+  lifecycle_class:
+    description: lifecycle class
+    required: true
+  intake_bucket:
+    description: intake bucket
+    required: false
+  publisher_state_machine_arn:
+    description: publisher state machine arn
+    required: false
+  channel_url:
+    description: channel url
+    required: true
+  archive_key_fingerprint:
+    description: archive key fingerprint
+    required: true
+  archive_key_url:
+    description: archive key url
+    required: true
+name: Validate and submit a Debian package to Vulcan
+outputs:
+  published_version:
+    description: published version
+    value: ${{ steps.publish.outputs.published_version }}
+  package_url:
+    description: package url
+    value: ${{ steps.publish.outputs.package_url }}
+  package_sha256:
+    description: package sha256
+    value: ${{ steps.publish.outputs.package_sha256 }}
+  channel_url:
+    description: channel url
+    value: ${{ steps.publish.outputs.channel_url }}
+  branch_token:
+    description: branch token
+    value: ${{ steps.publish.outputs.branch_token }}
+runs:
+  using: composite
+  steps:
+    - id: publish
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        PACKAGE_DIRECTORY: ${{ inputs.package_directory }}
+        CHANNEL: ${{ inputs.channel }}
+        SUITE: ${{ inputs.suite }}
+        ARCHITECTURE: ${{ inputs.architecture }}
+        EXPECTED_SHA256: ${{ inputs.expected_sha256 }}
+        PACKAGE_NAME: ${{ inputs.package_name }}
+        PACKAGE_VERSION: ${{ inputs.package_version }}
+        SOURCE_REPOSITORY: ${{ inputs.source_repository }}
+        SOURCE_REF: ${{ inputs.source_ref }}
+        SOURCE_COMMIT: ${{ inputs.source_commit }}
+        BUILD_SEQUENCE: ${{ inputs.build_sequence }}
+        BUILD_PROVENANCE: ${{ inputs.build_provenance }}
+        LIFECYCLE_CLASS: ${{ inputs.lifecycle_class }}
+        INTAKE_BUCKET: ${{ inputs.intake_bucket }}
+        PUBLISHER_STATE_MACHINE_ARN: ${{ inputs.publisher_state_machine_arn }}
+        CHANNEL_URL: ${{ inputs.channel_url }}
+        ARCHIVE_KEY_FINGERPRINT: ${{ inputs.archive_key_fingerprint }}
+        ARCHIVE_KEY_URL: ${{ inputs.archive_key_url }}
+      run: python3 "${{ github.action_path }}/publish.py"

@@ -16,6 +16,16 @@ def test_config_resolver_prefers_repository_role_over_owner_role() -> None:
     assert 'artifact_publisher_role_arn="${repository_publisher_role_arn:-${owner_publisher_role_arn}}"' in content
 
 
+def test_config_resolver_exposes_dataset_reader_contract() -> None:
+    content = workflow("vulcan-resolve-config.yml")
+
+    for output in ("dataset_bucket", "dataset_aws_region", "dataset_reader_role_arn"):
+        assert f"{output}: ${{{{ steps.config.outputs.{output} }}}}" in content
+    assert "emit dataset_bucket '.datasets.bucket'" in content
+    assert "emit dataset_aws_region '.datasets.aws_region' us-west-2" in content
+    assert "emit dataset_reader_role_arn '.datasets.reader_role_arn'" in content
+
+
 def test_publish_workflows_enforce_registered_repository_role() -> None:
     for name in ("vulcan-publish-artifacts.yml", "vulcan-update-latest-artifacts.yml"):
         content = workflow(name)

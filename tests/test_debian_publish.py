@@ -181,11 +181,12 @@ class DebianPublishContractTest(unittest.TestCase):
         packages = Path(self.temp.name) / "Packages"
         release = Path(self.temp.name) / "Release"
         inrelease = Path(self.temp.name) / "InRelease"
-        def sign_index(index_filename, *, suite="bookworm", label="SiMa.ai official", arches=("amd64",), expired=False):
+        def sign_index(index_filename, *, suite="bookworm", label="SiMa.ai official", arches=("amd64",),
+                       expired=False, extra_fields=""):
             packages.write_text(
                 f"Package: sima-cli\nVersion: 2.1.18\nArchitecture: {record['architecture']}\n"
                 f"Filename: {index_filename}\nSize: {self.deb.stat().st_size}\n"
-                f"SHA256: {record['sha256']}\n\n"
+                f"SHA256: {record['sha256']}\n{extra_fields}\n"
             )
             expiry = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=-1 if expired else 1)).strftime("%a, %d %b %Y %H:%M:%S UTC")
             release.write_text(
@@ -219,6 +220,11 @@ class DebianPublishContractTest(unittest.TestCase):
             sign_index(filename, label="SiMa.ai official-extra")
             with self.assertRaisesRegex(ValueError, "label mismatch"):
                 publisher.verify_public(record, result, self.deb)
+            for duplicate in (f"Filename: pool/bookworm/s/sima-cli/different.deb\n",
+                              f"SHA256: {'0' * 64}\n"):
+                sign_index(filename, extra_fields=duplicate)
+                with self.assertRaisesRegex(ValueError, "duplicate field in Packages stanza"):
+                    publisher.verify_public(record, result, self.deb)
 
             sign_index(filename, expired=True)
             with self.assertRaisesRegex(ValueError, "expired"):

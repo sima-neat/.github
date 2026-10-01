@@ -191,6 +191,23 @@ def release_field(release_text: str, name: str) -> str:
     return values[0]
 
 
+def package_stanza_fields(stanza: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    current = ""
+    for line in stanza.splitlines():
+        if line.startswith((" ", "\t")):
+            require(bool(current), "invalid continuation in Packages stanza")
+            fields[current] += "\n" + line[1:]
+            continue
+        key, sep, value = line.partition(":")
+        key = key.lower()
+        require(bool(sep) and bool(key) and key not in fields,
+                "invalid or duplicate field in Packages stanza")
+        fields[key] = value.strip()
+        current = key
+    return fields
+
+
 def verify_public(record: dict, result: dict, package: Path) -> None:
     channel_url = https_url(os.environ["CHANNEL_URL"])
     require(result.get("channel_url") == channel_url, "publisher returned a different channel URL")
@@ -258,8 +275,10 @@ def verify_public(record: dict, result: dict, package: Path) -> None:
                 "Filename": expected_filename,
                 "Size": str(package.stat().st_size),
             }
-            require(any(all(f"{key}: {value}" in stanza.splitlines() for key, value in expected.items())
-                        for stanza in index.read_text().split("\n\n")),
+            stanzas = (package_stanza_fields(stanza) for stanza in index.read_text().split("\n\n")
+                       if stanza.strip())
+            require(any(all(fields.get(key.lower()) == value for key, value in expected.items())
+                        for fields in stanzas),
                     f"published package is missing or misdirected in signed {arch} Packages index")
 
 

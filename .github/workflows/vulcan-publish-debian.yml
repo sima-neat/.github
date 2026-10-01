@@ -122,7 +122,7 @@ jobs:
           name: ${{ inputs.artifact_name }}
           path: _vulcan/debian-package
       - name: Validate package and source identity
-        uses: sima-neat/.github/debian-publish@89777c4c27af801ca8de645794c68161c5185a09
+        uses: sima-neat/.github/debian-publish@232351c38d15032d2b928caf5638468f39a2749b
         id: validate
         with:
           mode: validate
@@ -149,7 +149,7 @@ jobs:
           role-to-assume: ${{ inputs.submission_role_arn }}
           role-session-name: debian-${{ github.run_id }}
       - name: Submit and verify signed publication
-        uses: sima-neat/.github/debian-publish@89777c4c27af801ca8de645794c68161c5185a09
+        uses: sima-neat/.github/debian-publish@232351c38d15032d2b928caf5638468f39a2749b
         id: submit
         with:
           mode: submit

@@ -40,7 +40,10 @@ If you discover a security vulnerability in a SiMa.ai project:
 
 ## Scope
 
-This policy applies to all repositories under the **[SiMa-ai GitHub organization](https://github.com/SiMa-ai)**, including:  
+This policy applies to all repositories in the SiMa.ai
+**[SiMa-ai](https://github.com/SiMa-ai)** and
+**[sima-neat](https://github.com/sima-neat)** GitHub organizations, including:
+
 - System enablement projects (Yocto, drivers, SDK)  
 - AI demos and pipelines (Vision, Voice, Language)  
 - Developer tools and documentation  

@@ -138,6 +138,15 @@
         "kernels": "maintain"
       }
     },
+    "owners-models": {
+      "name": "owners-models",
+      "description": "Code owners for models",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "models": "write"
+      }
+    },
     "cloud": {
       "name": "cloud",
       "description": "Cloud Development",

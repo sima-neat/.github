@@ -380,17 +380,61 @@ exhausted, the workflow uses an unauthenticated request only after verifying the
 caller repository is public; it never uses that fallback for private repositories
 or for authentication and authorization failures such as `401` or `403`.
 
-For SiMa-owned repositories, the publisher checks whether the commit-scoped S3
-prefix existed before upload. New prefixes are verified through CloudFront
-without invalidation. Existing prefixes are invalidated before verification;
-if verification of a new prefix detects stale or cached-negative content, the
-publisher performs the same narrow invalidation as a fallback. URL-encoded S3
-keys are converted into their CloudFront viewer paths, so an S3 branch key such
-as `feature%2Ffoo` is invalidated as `feature%252Ffoo`. Required invalidations
-are limited to the commit prefix and awaited before `metadata-all.json`,
-`metadata.json`, or `manifest.json` is verified through the configured artifact
-base URL. Mutable `latest.tag` and `branches.json` paths use non-caching
-behaviors and are not invalidated.
+For SiMa-owned repositories, publication checks the exact destination objects.
+New paths publish without invalidation, even when sibling artifact folders already
+exist under the same branch/commit. Existing identical bytes are not uploaded
+again; changed bytes are replaced. Reruns explicitly invalidate every existing
+artifact destination and wait for completion before verifying it. Refreshing even
+identical destinations lets a rerun recover a previous publication interrupted
+between upload and invalidation. This policy allows changed reruns, superseding
+the conflicting-overwrite rejection originally proposed in issue #140.
+
+Existence checks use an authorized exact-key prefix listing before HEAD, so missing
+objects do not rely on distinguishing S3's 403 and 404 GET responses. Uploads supply
+SHA-256 checksums for S3 to validate. Small files use conditional PutObject; large
+files use checksummed multipart upload with conditional completion and cleanup on
+failure. The workflow checks CLI support before artifact download; older CLI
+versions must use `install_awscli: true` or be upgraded. Verification compares S3
+checksums without downloading new objects.
+Legacy objects without usable SHA-256 checksums require one streamed S3 comparison,
+without another full artifact on disk. Multipart uploads use one scratch part
+(normally 64 MiB, increased only to stay within 10,000 parts).
+
+CloudFront HEAD verification compares ETag and size with the verified S3 object;
+it does not download the artifact again or claim an independent CDN body hash.
+Repeated HTTP 404, cached HTTP 403 with a positive Age header, or ETag/size mismatch
+on a new path permits one exact-path fallback invalidation. An uncached 403 fails
+immediately; any error remaining after fallback also fails publication. Cached
+403 is only evidence supporting a bounded repair attempt, not proof of access.
+Invalidation reasons, paths and counts are recorded in the job summary. S3 branch
+keys such as `feature%2Ffoo` use viewer paths such as `feature%252Ffoo`. There are no
+commit-prefix wildcards. Mutable `latest.tag`, `latest.json` and `branches.json`
+use caching-disabled behaviors and are never invalidated. Branch discovery is
+updated only after uploads, invalidation waits and verification succeed.
+
+A preparation job resolves configuration and hashes the canonical bucket,
+namespace, encoded branch, short commit, and normalized folder for the publication
+concurrency group. Equivalent inputs (including empty, `.` and `./` folders) share
+a lock; distinct folders retain parallelism. Both jobs use the selected GitHub
+environment, so environments with required reviewers can require approval for
+each job. GitHub locks are repository-scoped:
+conditional object writes additionally reject intervening writes from overlapping
+folders or other repositories. Conflicts fail and require a fresh publication;
+the workflow never retries an overwrite against a newly observed ETag.
+
+Cross-owner publishers retain their restricted permissions: they verify through
+S3 and reject changed replacements when CDN invalidation is unavailable. Generated
+manifests are deterministic and omit volatile run/timestamp fields. When an older
+manifest differs only in those fields, callers without CDN management preserve its
+original bytes and first-publication provenance. Changed artifact lists still fail.
+CloudFront invalidations do not clear client-side cached copies; new commit paths
+remain the preferred way to distribute new builds.
+
+The local tests cover these contracts, including multipart completion conflicts
+and cached-error recovery. Before merging, validate first publish, changed rerun,
+interrupted-run recovery, and a representative large artifact using the actual
+staging publisher role and distribution. Local mocks do not establish deployed
+IAM permissions, CDN behavior, or publication performance.
 
 `branches.json` is generated from the caller repository's current active
 GitHub branches each time artifacts are published. It is stored at:

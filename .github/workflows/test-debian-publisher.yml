@@ -1,0 +1,55 @@
+name: Test Debian Publisher
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/vulcan-publish-debian.yml'
+      - '.github/workflows/test-debian-publisher.yml'
+      - 'debian-publish/**'
+      - 'tests/test_debian*.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/vulcan-publish-debian.yml'
+      - '.github/workflows/test-debian-publisher.yml'
+      - 'debian-publish/**'
+      - 'tests/test_debian*.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install validation dependencies
+        run: python -m pip install PyYAML check-jsonschema
+      - name: Fetch the pinned action for source comparison
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import subprocess
+          import yaml
+          workflow = yaml.safe_load(Path('.github/workflows/vulcan-publish-debian.yml').read_text())
+          steps = workflow['jobs']['publish']['steps']
+          ref = next(step['uses'].rsplit('@', 1)[1] for step in steps if step.get('id') == 'validate')
+          if not re.fullmatch(r'[0-9a-f]{40}', ref):
+              raise SystemExit('The action must be pinned to a full commit SHA')
+          subprocess.run(['git', 'fetch', '--no-tags', '--depth=1', 'https://github.com/sima-neat/.github.git', ref], check=True)
+          PY
+      - name: Test package publication and workflow contracts
+        run: python -m unittest discover -s tests -p 'test_debian*.py' -v
+      - name: Validate action metadata schema
+        run: check-jsonschema --builtin-schema vendor.github-actions debian-publish/action.yml
+      - name: Lint the unchanged workflows
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color .github/workflows/vulcan-publish-debian.yml .github/workflows/test-debian-publisher.yml

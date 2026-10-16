@@ -446,3 +446,12 @@ If `latest_tag` is empty, the workflow writes the current short commit SHA.
 Use `source_branch` and `source_commit` when the workflow is called from a
 `workflow_run` that must publish the triggering run's branch and commit rather
 than the downstream workflow's default-branch context.
+
+## Production GitHub environment
+
+For `sima-neat` callers, Vulcan jobs use the GitHub environment `prod`.
+The legacy `production` input remains accepted and is normalized only when
+selecting the job environment. AWS resource names, runner labels, and application
+environment values are unchanged. Keep required environment variables and
+protection rules on `prod`; other GitHub organizations retain their supplied
+environment names.

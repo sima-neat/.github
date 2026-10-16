@@ -82,7 +82,7 @@ jobs:
   update-latest:
     name: Update Vulcan latest tag
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment_name }}
+    environment: ${{ github.repository_owner == 'sima-neat' && (inputs.environment_name) == 'production' && 'prod' || (inputs.environment_name) }}
     env:
       AWS_REGION: ${{ inputs.aws_region }}
       ARTIFACT_BUCKET: ${{ inputs.bucket || vars.VULCAN_ARTIFACT_BUCKET }}

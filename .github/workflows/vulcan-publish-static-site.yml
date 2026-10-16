@@ -84,7 +84,7 @@ jobs:
   publish:
     name: Publish static site
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment_name }}
+    environment: ${{ github.repository_owner == 'sima-neat' && (inputs.environment_name) == 'production' && 'prod' || (inputs.environment_name) }}
     env:
       AWS_REGION: ${{ inputs.aws_region || vars[format('VULCAN_{0}_AWS_REGION', inputs.site_key)] || vars.VULCAN_AWS_REGION || 'us-west-2' }}
       SITE_BUCKET: ${{ inputs.bucket || vars[format('VULCAN_{0}_BUCKET', inputs.site_key)] || vars.VULCAN_STATIC_SITE_BUCKET }}

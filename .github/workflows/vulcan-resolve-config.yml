@@ -154,7 +154,7 @@ jobs:
   resolve:
     name: Resolve Vulcan config
     runs-on: ubuntu-latest
-    environment: ${{ inputs.vulcan_env }}
+    environment: ${{ github.repository_owner == 'sima-neat' && (inputs.vulcan_env) == 'production' && 'prod' || (inputs.vulcan_env) }}
     outputs:
       vulcan_env: ${{ steps.config.outputs.vulcan_env }}
       config_s3_uri: ${{ steps.config.outputs.config_s3_uri }}

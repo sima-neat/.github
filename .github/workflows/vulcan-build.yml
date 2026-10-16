@@ -293,7 +293,7 @@ jobs:
   build:
     name: Build on Vulcan
     needs: resolve-runner
-    environment: ${{ inputs.use_github_environment && (inputs.vulcan_env || vars.VULCAN_ENV || 'dev') || '' }}
+    environment: ${{ github.repository_owner == 'sima-neat' && (inputs.use_github_environment && (inputs.vulcan_env || vars.VULCAN_ENV || 'dev') || '') == 'production' && 'prod' || (inputs.use_github_environment && (inputs.vulcan_env || vars.VULCAN_ENV || 'dev') || '') }}
     runs-on: ${{ fromJSON(needs.resolve-runner.outputs.labels) }}
     env:
       VULCAN_RUNNER_PROFILE: ${{ needs.resolve-runner.outputs.profile }}

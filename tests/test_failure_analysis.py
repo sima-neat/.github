@@ -171,7 +171,7 @@ def test_implementation_ref_is_not_caller_controlled():
     for workflow in (reusable, notifier):
         assert 'implementation_ref' not in workflow[True]['workflow_call']['inputs']
     jobs = reusable['jobs']
-    assert jobs['collect']['steps'][0]['with']['ref'] == 'main'
+    assert jobs['collect']['steps'][0]['with']['ref'] == 'refs/heads/main'
     assert jobs['collect']['outputs']['trusted_revision'] == '${{ steps.shared.outputs.commit }}'
     assert jobs['analyze']['steps'][0]['with']['ref'] == '${{ needs.collect.outputs.trusted_revision }}'
-    assert jobs['reply']['steps'][0]['with']['ref'] == "${{ needs.collect.outputs.trusted_revision || 'main' }}"
+    assert jobs['reply']['steps'][0]['with']['ref'] == "${{ needs.collect.outputs.trusted_revision || 'refs/heads/main' }}"

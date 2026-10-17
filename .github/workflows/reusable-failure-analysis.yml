@@ -46,7 +46,7 @@ jobs:
         id: shared
         with:
           repository: sima-neat/.github
-          ref: main
+          ref: refs/heads/main
           persist-credentials: false
       - name: Collect exact attempt evidence
         env:
@@ -100,7 +100,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: sima-neat/.github
-          ref: ${{ needs.collect.outputs.trusted_revision || 'main' }}
+          ref: ${{ needs.collect.outputs.trusted_revision || 'refs/heads/main' }}
           persist-credentials: false
       - uses: actions/download-artifact@v6
         if: needs.analyze.result == 'success'

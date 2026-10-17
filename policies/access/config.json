@@ -206,6 +206,15 @@
         "sdk": "write",
         "sima-cli": "write"
       }
+    },
+    "model-developers": {
+      "name": "model-developers",
+      "description": "",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "models": "write"
+      }
     }
   },
   "legacy_teams": {

@@ -70,6 +70,7 @@ Current intended assignments:
 | `platform` | none |
 | `ae` | none |
 | `qa` | `all_repository_read` |
+| `model-developers` | none |
 
 Avoid all-repository write, maintain, or admin unless there is a specific
 reviewed need. Prefer repo-specific grants.
@@ -99,6 +100,8 @@ an explicit stewardship responsibility. This includes:
 
 Release and operations stewardship is represented separately through `devops`
 and `admin` repo grants.
+
+The `model-developers` team has write access to `models` for model development.
 
 The `cloud` team has maintain access to `vulcan`, `arthas`, and `kerrigan`.
 

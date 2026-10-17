@@ -1,0 +1,57 @@
+name: Smoke test failure analysis on bridges
+
+# Persistent runners execute only a revision accepted onto protected main.
+# Do not add pull_request, pull_request_target, or arbitrary-ref dispatch triggers.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/*failure-analysis*'
+      - 'scripts/failure_analysis.py'
+      - 'schemas/failure-analysis.schema.json'
+permissions:
+  contents: read
+jobs:
+  bridge-smoke:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: bridge
+            labels: '["self-hosted", "bridge"]'
+          - target: bridge-mirror
+            labels: '["self-hosted", "apt-mirror"]'
+    runs-on: ${{ fromJSON(matrix.labels) }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify bridge tools and authentication
+        run: |
+          python3 --version
+          codex --version
+          codex login status
+      - name: Diagnose synthetic docs failure without Slack
+        run: |
+          mkdir -p evidence
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          Path('evidence/context.json').write_text(json.dumps({
+              'repository': 'sima-neat/core', 'run_id': 1, 'run_attempt': 1,
+              'jobs': [{'name': 'Build docs', 'conclusion': 'failure',
+                        'log': 'Error: duplicate sidebar category key peripherals'}],
+              'limitations': ['Synthetic smoke fixture, not a real workflow failure.']
+          }))
+          PY
+          python3 scripts/failure_analysis.py analyze --directory evidence
+      - uses: actions/upload-artifact@v6
+        with:
+          name: bridge-analysis-smoke-${{ matrix.target }}
+          path: evidence/analysis.json
+          if-no-files-found: error
+      - if: always()
+        run: rm -rf evidence

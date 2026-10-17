@@ -88,3 +88,24 @@ def test_new_gh_escape_guard_is_retried_and_captured():
     with patch.object(m.subprocess, 'run', side_effect=[guarded, allowed]) as run:
         assert m.gh('repos/a/b/actions/jobs/1/logs', raw=True) == '\x1b[31merror'
     assert run.call_args.args[0][-1] == '--allow-escape-sequences'
+
+
+def test_pr_checks_never_schedule_persistent_runners():
+    import yaml
+    workflow = yaml.safe_load((ROOT / '.github/workflows/test-failure-analysis.yml').read_text())
+    # PyYAML's YAML 1.1 loader treats the Actions `on` key as True.
+    assert set(workflow[True]) == {'pull_request'}
+    assert workflow['jobs']
+    assert all(job['runs-on'] == 'ubuntu-latest' for job in workflow['jobs'].values())
+
+
+def test_bridge_smoke_accepts_only_exact_protected_main_push():
+    import yaml
+    workflow = yaml.safe_load((ROOT / '.github/workflows/smoke-failure-analysis.yml').read_text())
+    assert set(workflow[True]) == {'push'}
+    assert workflow[True]['push']['branches'] == ['main']
+    job = workflow['jobs']['bridge-smoke']
+    assert job['if'] == "github.event_name == 'push' && github.ref == 'refs/heads/main'"
+    checkout = next(step for step in job['steps'] if step.get('uses', '').startswith('actions/checkout@'))
+    assert checkout['with']['ref'] == '${{ github.sha }}'
+    assert checkout['with']['persist-credentials'] is False

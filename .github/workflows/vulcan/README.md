@@ -485,8 +485,14 @@ rerunning completed notification jobs merely to retry the failed source build;
 rerun the source workflow instead (its attempt number is recorded in the report).
 Cancellation can prevent the follow-up, but never removes the original alert.
 
-`test-failure-analysis.yml` runs regression tests plus a bridge Codex smoke test
-using synthetic docs failure evidence, without posting to Slack. Fork PRs cannot
-run the bridge job. Confirm the selected bridge runner and validated report in
-the check before rollout. This verifies that runner only; other bridge service
-accounts must be qualified separately before receiving the `bridge` label.
+`test-failure-analysis.yml` runs PR regression tests only on GitHub-hosted
+runners. Neither fork nor same-repository PR code is eligible for the bridge
+smoke test. `smoke-failure-analysis.yml` runs separately after relevant changes
+reach protected `main`, checks out that exact push SHA, and uses synthetic docs
+failure evidence without posting to Slack. It has no PR or manual arbitrary-ref
+trigger. Keep `main` protected: accepting a commit there is the trust boundary
+for executing code under the authenticated bridge service account.
+
+Confirm the selected runner and validated report in the post-merge check before
+rollout. Labels may select the same physical bridge for multiple matrix entries;
+a passing check qualifies the selected service account only.

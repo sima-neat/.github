@@ -95,7 +95,7 @@ EVIDENCE JSON:\n''' + json.dumps(context)
     if not api_key:
         raise ValueError('OPENAI_API_KEY is required for tool-free failure analysis')
     request_body = {
-        'model': 'gpt-5-mini',
+        'model': 'gpt-5.6-terra',
         'instructions': 'Diagnose supplied CI evidence only. Return the required JSON report.',
         'input': prompt,
         'tools': [],

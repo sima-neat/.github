@@ -98,6 +98,10 @@ def test_adversarial_evidence_cannot_start_tools_or_read_credentials(tmp_path, m
     body = json.loads(request.data)
     assert request.full_url == 'https://api.openai.com/v1/responses'
     assert request.get_header('Authorization') == 'Bearer api-secret'
+    assert body['model'] == 'gpt-5.6-terra'
+    assert body['reasoning'] == {'effort': 'low'}
+    assert body['text']['format']['type'] == 'json_schema'
+    assert body['text']['format']['strict'] is True
     assert body['tools'] == [] and body['tool_choice'] == 'none'
     assert body['store'] is False
     for secret in ('api-secret', 'github-secret', 'slack-secret', 'host-credential-canary'):

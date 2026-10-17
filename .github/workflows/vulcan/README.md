@@ -472,7 +472,7 @@ Evidence collection runs on a hosted runner and fetches jobs for the specified
 attempt. Up to eight failed jobs contribute bounded, redacted log excerpts.
 The analyzer runs on `[self-hosted, bridge]` and requires Python 3, HTTPS access
 to `api.openai.com`, and the caller's `openai_api_key`. It sends one tool-free
-Responses API request to the fixed endpoint, using `gpt-5-mini`, strict JSON
+Responses API request to the fixed endpoint, using `gpt-5.6-terra`, strict JSON
 output, `tools: []`, `tool_choice: none`, `store: false`, and a 120-second timeout.
 The request is billed to the API key's project; it does not use a Codex login.
 

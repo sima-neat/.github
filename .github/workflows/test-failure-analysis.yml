@@ -1,0 +1,22 @@
+name: Test failure analysis
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/*failure-analysis*'
+      - '.github/workflows/vulcan-notify-slack.yml'
+      - 'scripts/failure_analysis.py'
+      - 'schemas/failure-analysis.schema.json'
+      - 'tests/test_failure_analysis.py'
+      - 'tests/test_vulcan_slack_notification.py'
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install pytest PyYAML
+      - run: python -m pytest -q tests/test_failure_analysis.py tests/test_vulcan_slack_notification.py

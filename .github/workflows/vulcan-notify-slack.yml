@@ -3,6 +3,10 @@ name: vulcan-notify-slack
 on:
   workflow_call:
     inputs:
+      analyze_failure:
+        description: Append automated diagnosis in a Slack thread.
+        type: boolean
+        default: false
       channel_id:
         description: Slack channel ID that receives the notification.
         required: true
@@ -48,7 +52,17 @@ on:
         required: false
         default: ""
         type: string
+    outputs:
+      channel_id:
+        description: Channel containing the parent notification.
+        value: ${{ jobs.notify.outputs.channel_id }}
+      message_ts:
+        description: Parent message timestamp for threaded follow-ups.
+        value: ${{ jobs.notify.outputs.message_ts }}
     secrets:
+      openai_api_key:
+        description: API key used only by the tool-free analyzer.
+        required: false
       slack_bot_token:
         description: Slack bot token with chat:write access to the target channel.
         required: true
@@ -66,6 +80,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
+    outputs:
+      channel_id: ${{ steps.post.outputs.channel_id }}
+      message_ts: ${{ steps.post.outputs.ts }}
     steps:
       - name: Validate notification inputs
         shell: bash
@@ -118,13 +135,13 @@ jobs:
             const [owner, repo] = repositoryParts;
             const runId = Number(process.env.RUN_ID);
             const jobs = await github.paginate(
-              github.rest.actions.listJobsForWorkflowRun,
+              github.rest.actions.listJobsForWorkflowRunAttempt,
               {
                 owner,
                 repo,
                 run_id: runId,
                 per_page: 100,
-                filter: "latest",
+                attempt_number: Number(process.env.RUN_ATTEMPT),
               },
             );
 
@@ -227,9 +244,24 @@ jobs:
             });
 
       - name: Post failure notification to Slack
+        id: post
         uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
         with:
           errors: true
           method: chat.postMessage
           token: ${{ secrets.slack_bot_token }}
           payload: ${{ steps.compose.outputs.result }}
+
+  analyze:
+    needs: notify
+    if: inputs.analyze_failure
+    uses: ./.github/workflows/reusable-failure-analysis.yml
+    with:
+      repository: ${{ inputs.repository }}
+      run_id: ${{ inputs.run_id }}
+      run_attempt: ${{ inputs.run_attempt }}
+      channel_id: ${{ needs.notify.outputs.channel_id }}
+      thread_ts: ${{ needs.notify.outputs.message_ts }}
+    secrets:
+      openai_api_key: ${{ secrets.openai_api_key }}
+      slack_bot_token: ${{ secrets.slack_bot_token }}

@@ -1,0 +1,124 @@
+name: Reusable failure analysis
+
+on:
+  workflow_call:
+    inputs:
+      repository:
+        required: true
+        type: string
+      run_id:
+        required: true
+        type: number
+      run_attempt:
+        required: true
+        type: number
+      channel_id:
+        required: false
+        default: ''
+        type: string
+      thread_ts:
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: Collect and analyze without posting to Slack.
+        default: false
+        type: boolean
+    secrets:
+      openai_api_key:
+        description: API key used only by the tool-free analyzer.
+        required: false
+      slack_bot_token:
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      trusted_revision: ${{ steps.shared.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v6
+        id: shared
+        with:
+          repository: sima-neat/.github
+          ref: refs/heads/main
+          persist-credentials: false
+      - name: Collect exact attempt evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ inputs.repository }}
+          SOURCE_RUN_ID: ${{ inputs.run_id }}
+          SOURCE_ATTEMPT: ${{ inputs.run_attempt }}
+        run: python3 scripts/failure_analysis.py collect --directory evidence
+      - uses: actions/upload-artifact@v6
+        with:
+          name: failure-evidence-${{ inputs.run_id }}-${{ inputs.run_attempt }}
+          path: evidence/context.json
+          retention-days: 7
+          overwrite: true
+
+  analyze:
+    needs: collect
+    runs-on: [self-hosted, bridge]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: sima-neat/.github
+          ref: ${{ needs.collect.outputs.trusted_revision }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v6
+        with:
+          name: failure-evidence-${{ inputs.run_id }}-${{ inputs.run_attempt }}
+          path: evidence
+      - name: Analyze evidence without tools
+        env:
+          OPENAI_API_KEY: ${{ secrets.openai_api_key }}
+        run: python3 scripts/failure_analysis.py analyze --directory evidence
+      - uses: actions/upload-artifact@v6
+        with:
+          name: failure-analysis-${{ inputs.run_id }}-${{ inputs.run_attempt }}
+          path: evidence/analysis.json
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+      - name: Remove local evidence
+        if: always()
+        run: rm -rf evidence
+
+  reply:
+    needs: [collect, analyze]
+    if: ${{ always() && !cancelled() && !inputs.dry_run && inputs.thread_ts != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: sima-neat/.github
+          ref: ${{ needs.collect.outputs.trusted_revision || 'refs/heads/main' }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v6
+        if: needs.analyze.result == 'success'
+        with:
+          name: failure-analysis-${{ inputs.run_id }}-${{ inputs.run_attempt }}
+          path: evidence
+      - name: Render diagnosis or unavailable notice
+        env:
+          SLACK_CHANNEL: ${{ inputs.channel_id }}
+          SLACK_THREAD_TS: ${{ inputs.thread_ts }}
+          SOURCE_REPOSITORY: ${{ inputs.repository }}
+          SOURCE_RUN_ID: ${{ inputs.run_id }}
+          SOURCE_ATTEMPT: ${{ inputs.run_attempt }}
+        run: python3 scripts/failure_analysis.py render --directory evidence
+      - name: Reply to original notification
+        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        with:
+          errors: true
+          method: chat.postMessage
+          token: ${{ secrets.slack_bot_token }}
+          payload-file-path: evidence/payload.json

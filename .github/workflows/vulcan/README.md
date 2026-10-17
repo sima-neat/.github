@@ -446,3 +446,47 @@ If `latest_tag` is empty, the workflow writes the current short commit SHA.
 Use `source_branch` and `source_commit` when the workflow is called from a
 `workflow_run` that must publish the triggering run's branch and commit rather
 than the downstream workflow's default-branch context.
+
+## Automated failure diagnosis
+
+Set `analyze_failure: true` on `vulcan-notify-slack.yml` to append a diagnosis to
+its original Slack message. The initial alert is posted before analysis starts.
+The notifier exports `channel_id` and `message_ts` for other follow-ups.
+Pin the workflow reference and `implementation_ref` to the same reviewed shared
+repository commit so the scripts and workflow use a reproducible version.
+
+The reusable `reusable-failure-analysis.yml` can also follow other notification
+mechanisms. Pass `repository`, `run_id`, `run_attempt`, `channel_id`, `thread_ts`,
+and the `slack_bot_token` secret. The timestamp must identify the parent message.
+Set `dry_run: true` to collect/analyze without any Slack credentials or message.
+The caller token needs `actions: read` and `contents: read` on the source repository;
+cross-repository evidence collection is not supported by a caller-scoped token.
+
+Evidence collection runs on a hosted runner and fetches jobs for the specified
+attempt. Up to eight failed jobs contribute bounded, redacted log excerpts.
+The analyzer runs on `[self-hosted, bridge]` and requires Python 3, an authenticated
+Codex CLI under the runner service account, support for `exec --ephemeral`,
+`--output-schema`, and `--output-last-message`, and access to the model service.
+It uses an empty working directory, read-only sandbox, no approval prompts, and
+an eight-minute execution timeout. It receives no GitHub or Slack token and does
+not check out or execute the failed revision. Existing runner Codex authentication
+is used; a dedicated service account with minimal host access is recommended.
+
+The structured report contains what failed, likely cause, evidence, next action,
+and confidence. The hosted reply job validates the report and renders generated
+content as plain text to prevent mentions. If collection or diagnosis fails, the
+reply says analysis is unavailable. A runner that cannot start may remain queued
+until GitHub expires the job; the original alert is still delivered immediately.
+Evidence and reports are retained as Actions artifacts for seven days. Redaction
+is best-effort; GitHub log masking remains required for build secrets.
+
+A notifier rerun currently creates a new parent message and diagnosis. Avoid
+rerunning completed notification jobs merely to retry the failed source build;
+rerun the source workflow instead (its attempt number is recorded in the report).
+Cancellation can prevent the follow-up, but never removes the original alert.
+
+`test-failure-analysis.yml` runs regression tests plus a bridge Codex smoke test
+using synthetic docs failure evidence, without posting to Slack. Fork PRs cannot
+run the bridge job. Confirm the selected bridge runner and validated report in
+the check before rollout. This verifies that runner only; other bridge service
+accounts must be qualified separately before receiving the `bridge` label.

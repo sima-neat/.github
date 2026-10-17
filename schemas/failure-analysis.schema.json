@@ -1,0 +1,33 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "likely_cause",
+    "evidence",
+    "next_action",
+    "confidence"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "likely_cause": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "string"
+    },
+    "next_action": {
+      "type": "string"
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    }
+  }
+}

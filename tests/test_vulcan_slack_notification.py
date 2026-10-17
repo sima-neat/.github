@@ -37,7 +37,7 @@ def test_notifier_is_a_minimally_privileged_reusable_workflow() -> None:
 def test_notifier_fetches_failed_jobs_and_posts_with_pinned_actions() -> None:
     content = workflow()
 
-    assert "github.rest.actions.listJobsForWorkflowRun" in content
+    assert "github.rest.actions.listJobsForWorkflowRunAttempt" in content
     assert '"failure"' in content
     assert '"timed_out"' in content
     assert "actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd" in content
@@ -74,8 +74,8 @@ def test_composer_renders_failed_jobs_and_prevents_slack_mentions() -> None:
       setFailed(message) {{ throw new Error(message); }},
     }};
     const github = {{
-      paginate: async () => {json.dumps(jobs)},
-      rest: {{ actions: {{ listJobsForWorkflowRun() {{}} }} }},
+      paginate: async (_method, args) => {{ if (args.attempt_number !== 2) throw new Error("Wrong attempt"); return {json.dumps(jobs)}; }},
+      rest: {{ actions: {{ listJobsForWorkflowRunAttempt() {{}} }} }},
     }};
     async function compose() {{
     {textwrap.indent(embedded_composer(), '  ')}

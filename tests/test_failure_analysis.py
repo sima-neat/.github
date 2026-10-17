@@ -51,7 +51,13 @@ def test_thread_payload_keeps_generated_content_plain():
     result = m.payload(report(), 'C123', '123.456', 'sima-neat/core', 123, 2)
     assert result['thread_ts'] == '123.456'
     assert result['reply_broadcast'] is False
-    assert all(b['text']['type'] == 'plain_text' for b in result['blocks'][:-1])
+    sections = [b for b in result['blocks'] if b['type'] == 'section']
+    assert len(sections) == 4
+    assert all(b['text']['type'] == 'plain_text' for b in sections)
+    assert all('\n\n' in b['text']['text'] for b in sections)
+    assert [b['type'] for b in result['blocks']] == [
+        'section', 'divider', 'section', 'divider', 'section', 'divider', 'section', 'context'
+    ]
 
 
 @pytest.mark.parametrize('bad', [{}, {**report(), 'confidence': 'certain'}, {**report(), 'summary': 'x' * 1801}])

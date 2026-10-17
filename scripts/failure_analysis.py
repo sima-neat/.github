@@ -110,8 +110,12 @@ def payload(report, channel, thread_ts, repository, run_id, attempt):
     sections = [('What failed', 'summary'), ('Likely cause', 'likely_cause'),
                 ('Evidence', 'evidence'), ('Next action', 'next_action')]
     # Plain text blocks prevent generated mentions and links from being interpreted.
-    blocks = [{'type': 'section', 'text': {'type': 'plain_text',
-               'text': f'{title}\n{report[key]}'}} for title, key in sections]
+    blocks = []
+    for title, key in sections:
+        if blocks:
+            blocks.append({'type': 'divider'})
+        blocks.append({'type': 'section', 'text': {'type': 'plain_text',
+                       'text': f'{title}\n\n{report[key]}'}})
     blocks.append({'type': 'context', 'elements': [{'type': 'plain_text',
         'text': f'Automated analysis • confidence: {report["confidence"]} • {repository} run {run_id}, attempt {attempt}'}]})
     return {'channel': channel, 'thread_ts': thread_ts, 'reply_broadcast': False,

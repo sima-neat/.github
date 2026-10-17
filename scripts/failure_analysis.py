@@ -20,7 +20,13 @@ def redact(text):
 
 
 def gh(path, raw=False):
-    result = subprocess.run(['gh', 'api', path], capture_output=True, check=True, timeout=60)
+    command = ['gh', 'api', path]
+    result = subprocess.run(command, capture_output=True, timeout=60)
+    # New gh versions reject ANSI escapes even when stdout is captured. Older
+    # versions lack this flag, so retry only on this specific diagnostic.
+    if raw and result.returncode and b'--allow-escape-sequences' in result.stderr:
+        result = subprocess.run(command + ['--allow-escape-sequences'], capture_output=True, timeout=60)
+    result.check_returncode()
     return result.stdout.decode('utf-8', errors='replace') if raw else json.loads(result.stdout)
 
 

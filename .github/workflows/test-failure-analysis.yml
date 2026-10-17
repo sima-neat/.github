@@ -23,7 +23,15 @@ jobs:
   bridge-smoke:
     # Never execute fork PR code on private runners.
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, bridge]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: bridge
+            labels: '["self-hosted", "bridge"]'
+          - target: bridge-mirror
+            labels: '["self-hosted", "apt-mirror"]'
+    runs-on: ${{ fromJSON(matrix.labels) }}
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v6
@@ -50,7 +58,7 @@ jobs:
           python3 scripts/failure_analysis.py analyze --directory evidence
       - uses: actions/upload-artifact@v6
         with:
-          name: bridge-analysis-smoke
+          name: bridge-analysis-smoke-${{ matrix.target }}
           path: evidence/analysis.json
           if-no-files-found: error
       - if: always()

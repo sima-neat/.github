@@ -80,3 +80,11 @@ def test_analyzer_has_no_github_or_slack_credentials(tmp_path, monkeypatch):
     with patch.object(m.subprocess, 'run', run):
         m.analyze({}, ROOT / 'schemas/failure-analysis.schema.json', output)
     assert json.loads(output.read_text())['confidence'] == 'high'
+
+
+def test_new_gh_escape_guard_is_retried_and_captured():
+    guarded = subprocess.CompletedProcess([], 1, b'', b'pass --allow-escape-sequences')
+    allowed = subprocess.CompletedProcess([], 0, b'\x1b[31merror', b'')
+    with patch.object(m.subprocess, 'run', side_effect=[guarded, allowed]) as run:
+        assert m.gh('repos/a/b/actions/jobs/1/logs', raw=True) == '\x1b[31merror'
+    assert run.call_args.args[0][-1] == '--allow-escape-sequences'

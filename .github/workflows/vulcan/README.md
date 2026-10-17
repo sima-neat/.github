@@ -449,50 +449,64 @@ than the downstream workflow's default-branch context.
 
 ## Automated failure diagnosis
 
-Set `analyze_failure: true` on `vulcan-notify-slack.yml` to append a diagnosis to
-its original Slack message. The initial alert is posted before analysis starts.
-The notifier exports `channel_id` and `message_ts` for other follow-ups.
-Pin the workflow reference and `implementation_ref` to the same reviewed shared
-repository commit so the scripts and workflow use a reproducible version.
+Set `analyze_failure: true` on `vulcan-notify-slack.yml` and pass the
+`openai_api_key` secret to append a diagnosis to its original Slack message.
+The initial alert is posted before analysis starts. The notifier exports
+`channel_id` and `message_ts` for other follow-ups.
 
-The reusable `reusable-failure-analysis.yml` can also follow other notification
+The reusable `reusable-failure-analysis.yml` also supports other notification
 mechanisms. Pass `repository`, `run_id`, `run_attempt`, `channel_id`, `thread_ts`,
-and the `slack_bot_token` secret. The timestamp must identify the parent message.
+plus `openai_api_key` and `slack_bot_token`. The timestamp identifies the parent.
 Set `dry_run: true` to collect/analyze without any Slack credentials or message.
 The caller token needs `actions: read` and `contents: read` on the source repository;
 cross-repository evidence collection is not supported by a caller-scoped token.
 
+The caller follows the shared workflow at `@main`. Implementation code always
+comes from protected shared `main`: the hosted collector resolves it once and
+exports its immutable checkout SHA. The bridge and reply jobs use that SHA.
+There is no caller-supplied implementation ref. If collection fails before
+resolution, the hosted fallback reply checks out shared `main` directly.
+Keep shared `main` protected; it is the trust boundary for executable code.
+
 Evidence collection runs on a hosted runner and fetches jobs for the specified
 attempt. Up to eight failed jobs contribute bounded, redacted log excerpts.
-The analyzer runs on `[self-hosted, bridge]` and requires Python 3, an authenticated
-Codex CLI under the runner service account, support for `exec --ephemeral`,
-`--output-schema`, and `--output-last-message`, and access to the model service.
-It uses an empty working directory, read-only sandbox, no approval prompts, and
-an eight-minute execution timeout. It receives no GitHub or Slack token and does
-not check out or execute the failed revision. Existing runner Codex authentication
-is used; a dedicated service account with minimal host access is recommended.
+The analyzer runs on `[self-hosted, bridge]` and requires Python 3, HTTPS access
+to `api.openai.com`, and the caller's `openai_api_key`. It sends one tool-free
+Responses API request to the fixed endpoint, using `gpt-5-mini`, strict JSON
+output, `tools: []`, `tool_choice: none`, `store: false`, and a 120-second timeout.
+The request is billed to the API key's project; it does not use a Codex login.
 
-The structured report contains what failed, likely cause, evidence, next action,
-and confidence. The hosted reply job validates the report and renders generated
-content as plain text to prevent mentions. If collection or diagnosis fails, the
-reply says analysis is unavailable. A runner that cannot start may remain queued
-until GitHub expires the job; the original alert is still delivered immediately.
-Evidence and reports are retained as Actions artifacts for seven days. Redaction
-is best-effort; GitHub log masking remains required for build secrets.
+No agent process, shell, filesystem tool, MCP server, or tool dispatcher is
+started. The model receives only the supplied evidence and report instructions;
+it cannot read runner files or execute generated commands. Credentials are used
+only by the deterministic HTTP client in its Authorization header, never in the
+model input. Redirects and environment proxy overrides are disabled, and any
+unexpected tool-call output, refusal, incomplete response, or malformed report
+is rejected. This replaces the previous read-only Codex session, which did not
+prevent reads of persistent runner credentials. Prompt injection can still bias
+the diagnosis, so generated advice must be reviewed before acting on it.
 
-A notifier rerun currently creates a new parent message and diagnosis. Avoid
-rerunning completed notification jobs merely to retry the failed source build;
-rerun the source workflow instead (its attempt number is recorded in the report).
-Cancellation can prevent the follow-up, but never removes the original alert.
+The report contains what failed, likely cause, evidence, next action, and
+confidence. The hosted reply renders generated text without interpreting Slack
+mentions and separates sections with spacing and dividers. Collection, API, or
+validation failures produce an analysis-unavailable reply. A runner that cannot
+start may queue until GitHub expires the job; the original alert is independent.
+Evidence and reports are retained for seven days. Redaction is best-effort;
+GitHub log masking remains required for build secrets.
 
-`test-failure-analysis.yml` runs PR regression tests only on GitHub-hosted
-runners. Neither fork nor same-repository PR code is eligible for the bridge
-smoke test. `smoke-failure-analysis.yml` runs separately after relevant changes
-reach protected `main`, checks out that exact push SHA, and uses synthetic docs
-failure evidence without posting to Slack. It has no PR or manual arbitrary-ref
-trigger. Keep `main` protected: accepting a commit there is the trust boundary
-for executing code under the authenticated bridge service account.
+Rerunning a notifier creates a new parent/reply pair. Rerun the source build when
+retrying a CI/docs failure. Cancellation can prevent the follow-up but never
+removes the parent alert.
 
-Confirm the selected runner and validated report in the post-merge check before
-rollout. Labels may select the same physical bridge for multiple matrix entries;
-a passing check qualifies the selected service account only.
+`test-failure-analysis.yml` runs regression tests only on hosted PR runners.
+Neither fork nor same-repository PR code is eligible for the bridge smoke test.
+`smoke-failure-analysis.yml` runs only after relevant protected-main pushes and
+checks out that exact push SHA. Configure `OPENAI_API_KEY` in the shared repository
+for its live synthetic smoke test; otherwise it emits an explicit warning and
+skips live inference. The consumer's key does not populate the shared repo secret.
+There is no PR or arbitrary-ref dispatch trigger. No smoke test posts to Slack.
+
+Prior Codex CLI qualification does not qualify the new API credential or model
+access. Validate a live dry run with the caller's API credential before rollout.
+Labels can select the same physical bridge for multiple matrix entries; a
+successful check qualifies only the runner and credential actually exercised.

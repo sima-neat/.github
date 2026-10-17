@@ -6,7 +6,8 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import tempfile
+import urllib.error
+import urllib.request
 
 FAILURES = {'failure', 'timed_out', 'action_required', 'startup_failure', 'stale'}
 FIELDS = ('summary', 'likely_cause', 'evidence', 'next_action', 'confidence')
@@ -90,17 +91,64 @@ Suggest one practical next action, without executing it. Do not reproduce secret
 Fields: summary, likely_cause, evidence, next_action, confidence (low/medium/high).
 Each text field must be nonempty and at most 1800 characters.
 EVIDENCE JSON:\n''' + json.dumps(context)
-    env = {key: value for key, value in os.environ.items()
-           if key in {'HOME', 'PATH', 'CODEX_HOME', 'LANG', 'TMPDIR', 'SSL_CERT_FILE', 'SSL_CERT_DIR'}}
-    # Empty working directory avoids loading instructions from the failed revision.
-    with tempfile.TemporaryDirectory(prefix='ci-diagnosis-') as work:
-        subprocess.run(['codex', '-a', 'never', 'exec', '--sandbox', 'read-only',
-                        '--skip-git-repo-check', '--ephemeral', '--output-schema', str(schema.resolve()),
-                        '--output-last-message', str(output.resolve()), '-'],
-                       input=prompt, text=True, cwd=work, env=env, check=True, timeout=480,
-                       stdout=subprocess.DEVNULL)
-    report = validate(json.loads(output.read_text()))
+    api_key = os.environ.get('OPENAI_API_KEY')
+    if not api_key:
+        raise ValueError('OPENAI_API_KEY is required for tool-free failure analysis')
+    request_body = {
+        'model': 'gpt-5-mini',
+        'instructions': 'Diagnose supplied CI evidence only. Return the required JSON report.',
+        'input': prompt,
+        'tools': [],
+        'tool_choice': 'none',
+        'store': False,
+        'max_output_tokens': 4096,
+        'reasoning': {'effort': 'low'},
+        'text': {'format': {'type': 'json_schema', 'name': 'failure_analysis',
+                            'strict': True, 'schema': json.loads(schema.read_text())}},
+    }
+    request = urllib.request.Request(
+        'https://api.openai.com/v1/responses',
+        data=json.dumps(request_body).encode(),
+        headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
+        method='POST',
+    )
+    # No agent runtime or tool dispatcher exists here. Model output is data only.
+    # Ignore proxy environment variables and never forward credentials on redirects.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    try:
+        with opener.open(request, timeout=120) as response:
+            raw = response.read(131073)
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(f'Analysis API returned HTTP {error.code}') from None
+    except (urllib.error.URLError, TimeoutError):
+        raise RuntimeError('Analysis API connection failed or timed out') from None
+    if len(raw) > 131072:
+        raise ValueError('Analysis API response exceeded size limit')
+    report = parse_response(json.loads(raw))
     output.write_text(json.dumps(report, indent=2) + '\n')
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError('Analysis API redirects are not allowed')
+
+
+def parse_response(response):
+    if response.get('status') != 'completed':
+        raise ValueError('Analysis API did not complete')
+    texts = []
+    for item in response.get('output', []):
+        if item.get('type') == 'reasoning':
+            continue
+        if item.get('type') != 'message' or item.get('role') != 'assistant':
+            raise ValueError('Unexpected analysis output; tools are forbidden')
+        for part in item.get('content', []):
+            if part.get('type') != 'output_text':
+                raise ValueError('Analysis returned a refusal or non-text content')
+            texts.append(part['text'])
+    if len(texts) != 1:
+        raise ValueError('Expected exactly one analysis report')
+    return validate(json.loads(texts[0]))
 
 
 def payload(report, channel, thread_ts, repository, run_id, attempt):

@@ -29,12 +29,23 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Verify bridge tools and authentication
+      - name: Verify Python
+        run: python3 --version
+      - name: Check live API smoke configuration
+        id: credential
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          python3 --version
-          codex --version
-          codex login status
+          if [[ -n "$OPENAI_API_KEY" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Live API smoke not run: configure OPENAI_API_KEY in the shared repository."
+          fi
       - name: Diagnose synthetic docs failure without Slack
+        if: steps.credential.outputs.configured == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           mkdir -p evidence
           python3 - <<'PY'
@@ -49,6 +60,7 @@ jobs:
           PY
           python3 scripts/failure_analysis.py analyze --directory evidence
       - uses: actions/upload-artifact@v6
+        if: steps.credential.outputs.configured == 'true'
         with:
           name: bridge-analysis-smoke-${{ matrix.target }}
           path: evidence/analysis.json

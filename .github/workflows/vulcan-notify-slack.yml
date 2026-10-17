@@ -7,10 +7,6 @@ on:
         description: Append automated diagnosis in a Slack thread.
         type: boolean
         default: false
-      implementation_ref:
-        description: Shared scripts revision for failure analysis.
-        type: string
-        default: main
       channel_id:
         description: Slack channel ID that receives the notification.
         required: true
@@ -64,6 +60,9 @@ on:
         description: Parent message timestamp for threaded follow-ups.
         value: ${{ jobs.notify.outputs.message_ts }}
     secrets:
+      openai_api_key:
+        description: API key used only by the tool-free analyzer.
+        required: false
       slack_bot_token:
         description: Slack bot token with chat:write access to the target channel.
         required: true
@@ -263,6 +262,6 @@ jobs:
       run_attempt: ${{ inputs.run_attempt }}
       channel_id: ${{ needs.notify.outputs.channel_id }}
       thread_ts: ${{ needs.notify.outputs.message_ts }}
-      implementation_ref: ${{ inputs.implementation_ref }}
     secrets:
+      openai_api_key: ${{ secrets.openai_api_key }}
       slack_bot_token: ${{ secrets.slack_bot_token }}

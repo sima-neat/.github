@@ -1,0 +1,26 @@
+name: Test Sysroot Resolver
+on:
+  push:
+    paths:
+      - scripts/resolve_sysroot.py
+      - tests/test_resolve_sysroot.py
+      - .github/workflows/resolve-sysroot.yml
+      - .github/workflows/test-sysroot-resolver.yml
+  pull_request:
+    paths:
+      - scripts/resolve_sysroot.py
+      - tests/test_resolve_sysroot.py
+      - .github/workflows/resolve-sysroot.yml
+      - .github/workflows/test-sysroot-resolver.yml
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest
+      - run: python -m pytest tests/test_resolve_sysroot.py -q

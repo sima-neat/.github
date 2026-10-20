@@ -75,7 +75,6 @@ jobs:
     timeout-minutes: 5
     env:
       DISCOVERY_APP_ID: ${{ secrets.app_id }}
-      DISCOVERY_APP_PRIVATE_KEY: ${{ secrets.app_private_key }}
     outputs:
       runner_labels: ${{ steps.runner.outputs.runner_labels }}
       elxr_version: ${{ steps.runner.outputs.elxr_version }}
@@ -97,7 +96,7 @@ jobs:
           persist-credentials: false
 
       - name: Mint runner discovery token
-        if: ${{ env.DISCOVERY_APP_ID != '' && env.DISCOVERY_APP_PRIVATE_KEY != '' }}
+        if: ${{ env.DISCOVERY_APP_ID != '' }}
         id: app-token
         uses: actions/create-github-app-token@v2
         with:

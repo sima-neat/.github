@@ -94,3 +94,24 @@ def test_legacy_manifest_preserves_group_without_inventory():
 
 def test_case_insensitive_github_labels():
     assert resolve([runner(version=VERSION.lower(), labels=[v.upper() for v in LABELS])])['candidate_runners'] == ['new']
+
+
+def test_group_mismatch_never_uses_other_groups():
+    def get(path):
+        return {'runner_groups': [{'id': 1, 'name': 'modalix-devkit-2.0.0', 'visibility': 'all'}]}
+    with pytest.raises(ValueError, match='Expected one accessible runner group'):
+        R.resolve(MANIFEST, LABELS, get, 'sima-neat/llima', allow_fallback=True)
+
+
+def test_public_repository_requires_group_opt_in():
+    base = inventory([runner()])
+    def get(path):
+        return {'private': False} if path.startswith('/repos/') else base(path)
+    with pytest.raises(ValueError, match='does not allow public'):
+        R.resolve(MANIFEST, LABELS, get, 'sima-neat/llima')
+
+
+@pytest.mark.parametrize('labels', [[], 'modalix', [''], LABELS + [VERSION]])
+def test_reject_invalid_or_conflicting_caller_labels(labels):
+    with pytest.raises(ValueError):
+        R.resolve(MANIFEST, labels, inventory([runner()]), 'sima-neat/llima')

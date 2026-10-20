@@ -40,7 +40,7 @@ def select(runners, labels, version, allow_fallback):
 
 
 def resolve(manifest, labels, get, repository, *, allow_fallback=False,
-            legacy_version='2.0.0', legacy_group='modalix-devkit', prefix='modalix-devkit-'):
+            repository_private=True, legacy_version='2.0.0', legacy_group='modalix-devkit', prefix='modalix-devkit-'):
     platform = manifest.get('platform-version', '')
     if not isinstance(platform, str) or not re.fullmatch(r'[0-9][0-9A-Za-z._+-]*', platform):
         raise ValueError('Missing or invalid platform-version')
@@ -71,8 +71,7 @@ def resolve(manifest, labels, get, repository, *, allow_fallback=False,
         raise ValueError(f'Expected one accessible runner group named {group}')
     selected = groups[0]
     # Check repository access before treating a group member as schedulable.
-    repo = get('/repos/' + repository)
-    if not repo['private'] and not selected.get('allows_public_repositories', False):
+    if not repository_private and not selected.get('allows_public_repositories', False):
         raise ValueError(f'Runner group {group} does not allow public repositories')
     if selected['visibility'] == 'selected':
         repos = collect(get, f'{base}/{selected["id"]}/repositories', 'repositories')
@@ -99,12 +98,13 @@ def main():
             with urlopen(request, timeout=30) as response:
                 return json.load(response)
         except HTTPError as error:
-            raise ValueError(f'Runner discovery API returned HTTP {error.code}; check token permissions and group access') from None
+            raise ValueError(f'Runner discovery API {path.split('?')[0]} returned HTTP {error.code}; check token permissions and group access') from None
 
     result = resolve(
         json.loads(Path(os.environ['MANIFEST_PATH']).read_text()),
         json.loads(os.environ['RUNNER_LABELS']), get, os.environ['GITHUB_REPOSITORY'],
         allow_fallback=os.environ.get('ALLOW_VERSION_FALLBACK', 'false') == 'true',
+        repository_private=json.loads(os.environ['REPOSITORY_PRIVATE']),
         legacy_version=os.environ['LEGACY_PLATFORM_VERSION'],
         legacy_group=os.environ['LEGACY_RUNNER_GROUP'], prefix=os.environ['VERSIONED_RUNNER_GROUP_PREFIX'])
     Path('runner-resolution.json').write_text(json.dumps(result, indent=2) + '\n')

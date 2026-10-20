@@ -110,6 +110,7 @@ jobs:
         shell: bash
         env:
           MANIFEST_PATH: caller/${{ inputs.manifest_path }}
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
           RUNNER_LABELS: ${{ inputs.runner-labels }}
           ALLOW_VERSION_FALLBACK: ${{ inputs.allow-version-fallback }}
           RUNNER_DISCOVERY_TOKEN: ${{ steps.app-token.outputs.token || secrets.RUNNER_DISCOVERY_TOKEN }}

@@ -17,8 +17,6 @@ def runner(name='new', version=VERSION, *, status='online', busy=False, labels=L
 
 def inventory(runners, *, visibility='all', repositories=None):
     def get(path):
-        if path == '/repos/sima-neat/llima':
-            return {'private': True}
         if '/repositories?' in path:
             return {'repositories': repositories or []}
         if '/runners?' in path:
@@ -104,14 +102,23 @@ def test_group_mismatch_never_uses_other_groups():
 
 
 def test_public_repository_requires_group_opt_in():
-    base = inventory([runner()])
-    def get(path):
-        return {'private': False} if path.startswith('/repos/') else base(path)
     with pytest.raises(ValueError, match='does not allow public'):
-        R.resolve(MANIFEST, LABELS, get, 'sima-neat/llima')
+        R.resolve(MANIFEST, LABELS, inventory([runner()]), 'sima-neat/llima', repository_private=False)
+
 
 
 @pytest.mark.parametrize('labels', [[], 'modalix', [''], LABELS + [VERSION]])
 def test_reject_invalid_or_conflicting_caller_labels(labels):
     with pytest.raises(ValueError):
         R.resolve(MANIFEST, labels, inventory([runner()]), 'sima-neat/llima')
+
+
+def test_discovery_needs_only_organization_runner_endpoints():
+    paths = []
+    base = inventory([runner()])
+    def get(path):
+        paths.append(path)
+        assert path.startswith('/orgs/sima-neat/actions/runner-groups')
+        return base(path)
+    assert R.resolve(MANIFEST, LABELS, get, 'sima-neat/internals')['candidate_runners'] == ['new']
+    assert len(paths) == 2

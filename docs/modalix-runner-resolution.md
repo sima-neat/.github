@@ -21,7 +21,8 @@ trigger fallback. Manifests without `elxr_version` retain platform-group behavio
 Pass the existing GitHub App credentials as `app_id` and `app_private_key`.
 Internals and LLiMa use the Release Engineering App secrets `NEAT_RELEASES_APP_ID`
 and `NEAT_RELEASES_APP_PRIVATE_KEY`. The App must have organization
-self-hosted-runners read permission and access to the caller repository metadata.
+self-hosted-runners read permission. Caller repository visibility comes from
+GitHub Actions event metadata; the App needs no private repository content access.
 The workflow mints a short-lived token limited to runner read permission and
 revokes it at job completion. `RUNNER_DISCOVERY_TOKEN` is an alternative for
 callers that already supply an appropriate token.

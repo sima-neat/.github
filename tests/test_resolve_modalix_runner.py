@@ -122,3 +122,9 @@ def test_discovery_needs_only_organization_runner_endpoints():
         return base(path)
     assert R.resolve(MANIFEST, LABELS, get, 'sima-neat/internals')['candidate_runners'] == ['new']
     assert len(paths) == 2
+
+
+@pytest.mark.parametrize('options', [{'legacy_version': ''}, {'legacy_version': '  '}, {'legacy_group': ''}, {'prefix': ''}])
+def test_empty_legacy_configuration_is_rejected(options):
+    with pytest.raises(ValueError, match='must not be empty'):
+        R.resolve({'platform-version': '2.0.0'}, LABELS, None, 'sima-neat/llima', **options)

@@ -44,8 +44,9 @@ def resolve(manifest, labels, get, repository, *, allow_fallback=False,
     platform = manifest.get('platform-version', '')
     if not isinstance(platform, str) or not re.fullmatch(r'[0-9][0-9A-Za-z._+-]*', platform):
         raise ValueError('Missing or invalid platform-version')
-    if not legacy_group or not prefix:
-        raise ValueError('Runner group names must not be empty')
+    legacy_version, legacy_group, prefix = (value.strip() for value in (legacy_version, legacy_group, prefix))
+    if not legacy_version or not legacy_group or not prefix:
+        raise ValueError('Legacy platform version, runner group and prefix must not be empty')
     if not isinstance(labels, list) or not labels or any(
         not isinstance(label, str) or not label.strip() or '\n' in label for label in labels
     ):

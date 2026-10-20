@@ -1,0 +1,50 @@
+name: Resolve Sysroot
+on:
+  workflow_call:
+    inputs:
+      manifest_path:
+        description: Dependency manifest in the caller repository at the tested commit.
+        type: string
+        default: deps/manifest.json
+      shared_workflow_ref:
+        description: Ref of sima-neat/.github containing the resolver; pin alongside the workflow ref.
+        type: string
+        default: main
+    outputs:
+      sysroot_version:
+        description: Exact APT platform package version for sysroot provisioning.
+        value: ${{ jobs.resolve.outputs.sysroot_version }}
+      elxr_version:
+        description: Exact requested DevKit firmware identity.
+        value: ${{ jobs.resolve.outputs.elxr_version }}
+permissions:
+  contents: read
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      sysroot_version: ${{ steps.resolve.outputs.sysroot_version }}
+      elxr_version: ${{ steps.resolve.outputs.elxr_version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: caller
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: sima-neat/.github
+          ref: ${{ inputs.shared_workflow_ref }}
+          path: shared
+          persist-credentials: false
+      - name: Resolve exact sysroot receipt
+        id: resolve
+        env:
+          MANIFEST_PATH: ${{ inputs.manifest_path }}
+        run: python3 shared/scripts/resolve_sysroot.py --manifest "caller/${MANIFEST_PATH}" --receipt sysroot-resolution.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sysroot-resolution
+          path: sysroot-resolution.json
+          if-no-files-found: error
+          overwrite: true

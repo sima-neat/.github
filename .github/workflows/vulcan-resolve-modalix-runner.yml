@@ -8,6 +8,18 @@ on:
         required: false
         default: deps/manifest.json
         type: string
+      allow-version-fallback:
+        description: Allow dropping only the firmware label when no online exact match exists.
+        type: boolean
+        default: false
+      runner-labels:
+        description: JSON array of all required hardware and environment labels.
+        type: string
+        default: '["self-hosted", "Linux", "ARM64", "modalix"]'
+      shared_workflow_ref:
+        description: Ref containing the resolver script; use the same ref as this workflow.
+        type: string
+        default: main
       legacy_platform_version:
         description: Platform version that uses the legacy Modalix runner group.
         required: false
@@ -23,7 +35,26 @@ on:
         required: false
         default: modalix-devkit-
         type: string
+    secrets:
+      app_id:
+        description: Existing GitHub App ID for runner discovery.
+        required: false
+      app_private_key:
+        description: Existing GitHub App private key for runner discovery.
+        required: false
+      RUNNER_DISCOVERY_TOKEN:
+        description: Token with organization self-hosted-runners read access; required for elxr_version.
+        required: false
     outputs:
+      runner_labels:
+        description: JSON array of resolved labels, including exact firmware unless fallback was used.
+        value: ${{ jobs.resolve.outputs.runner_labels }}
+      elxr_version:
+        description: Requested firmware identity.
+        value: ${{ jobs.resolve.outputs.elxr_version }}
+      version_fallback:
+        description: Whether the firmware label was explicitly dropped.
+        value: ${{ jobs.resolve.outputs.version_fallback }}
       platform_version:
         description: Platform version read from the dependency manifest.
         value: ${{ jobs.resolve.outputs.platform_version }}
@@ -41,7 +72,14 @@ jobs:
   resolve:
     name: Resolve Modalix runner
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DISCOVERY_APP_ID: ${{ secrets.app_id }}
+      DISCOVERY_APP_PRIVATE_KEY: ${{ secrets.app_private_key }}
     outputs:
+      runner_labels: ${{ steps.runner.outputs.runner_labels }}
+      elxr_version: ${{ steps.runner.outputs.elxr_version }}
+      version_fallback: ${{ steps.runner.outputs.version_fallback }}
       platform_version: ${{ steps.runner.outputs.platform_version }}
       modalix_runner_group: ${{ steps.runner.outputs.modalix_runner_group }}
     steps:
@@ -49,53 +87,40 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
+          path: caller
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: sima-neat/.github
+          ref: ${{ inputs.shared_workflow_ref }}
+          path: shared
+          persist-credentials: false
+
+      - name: Mint runner discovery token
+        if: ${{ env.DISCOVERY_APP_ID != '' && env.DISCOVERY_APP_PRIVATE_KEY != '' }}
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.app_private_key }}
+          owner: ${{ github.repository_owner }}
+          permission-organization-self-hosted-runners: read
 
       - name: Resolve Modalix runner group
         id: runner
         shell: bash
         env:
-          MANIFEST_PATH: ${{ inputs.manifest_path }}
+          MANIFEST_PATH: caller/${{ inputs.manifest_path }}
+          RUNNER_LABELS: ${{ inputs.runner-labels }}
+          ALLOW_VERSION_FALLBACK: ${{ inputs.allow-version-fallback }}
+          RUNNER_DISCOVERY_TOKEN: ${{ steps.app-token.outputs.token || secrets.RUNNER_DISCOVERY_TOKEN }}
           LEGACY_PLATFORM_VERSION: ${{ inputs.legacy_platform_version }}
           LEGACY_RUNNER_GROUP: ${{ inputs.legacy_runner_group }}
           VERSIONED_RUNNER_GROUP_PREFIX: ${{ inputs.versioned_runner_group_prefix }}
-        run: |
-          set -euo pipefail
-
-          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
-          import json
-          import os
-          import re
-          from pathlib import Path
-
-          manifest_path = Path(os.environ["MANIFEST_PATH"])
-          legacy_platform_version = os.environ["LEGACY_PLATFORM_VERSION"].strip()
-          legacy_runner_group = os.environ["LEGACY_RUNNER_GROUP"].strip()
-          versioned_runner_group_prefix = os.environ["VERSIONED_RUNNER_GROUP_PREFIX"].strip()
-
-          if not manifest_path.is_file():
-              raise SystemExit(f"Dependency manifest not found: {manifest_path}")
-          if not legacy_platform_version:
-              raise SystemExit("legacy_platform_version must not be empty")
-          if not legacy_runner_group:
-              raise SystemExit("legacy_runner_group must not be empty")
-          if not versioned_runner_group_prefix:
-              raise SystemExit("versioned_runner_group_prefix must not be empty")
-
-          data = json.loads(manifest_path.read_text())
-          platform_version = str(data.get("platform-version", "")).strip()
-          if not platform_version:
-              raise SystemExit(f"Missing or empty platform-version in {manifest_path}")
-          if not re.fullmatch(r"[0-9][0-9A-Za-z._+-]*", platform_version):
-              raise SystemExit(f"Unsupported platform-version for runner group: {platform_version!r}")
-
-          runner_group = (
-              legacy_runner_group
-              if platform_version == legacy_platform_version
-              else f"{versioned_runner_group_prefix}{platform_version}"
-          )
-          print(f"platform_version={platform_version}")
-          print(f"modalix_runner_group={runner_group}")
-          PY
-
-          echo "Resolved platform version: $(grep '^platform_version=' "${GITHUB_OUTPUT}" | tail -n1 | cut -d= -f2-)"
-          echo "Resolved Modalix runner group: $(grep '^modalix_runner_group=' "${GITHUB_OUTPUT}" | tail -n1 | cut -d= -f2-)"
+        run: python3 shared/scripts/resolve_modalix_runner.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runner-resolution
+          path: runner-resolution.json
+          if-no-files-found: error
+          overwrite: true

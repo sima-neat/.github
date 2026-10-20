@@ -42,3 +42,30 @@ jobs:
           test "$GROUP" = modalix-devkit-3.0.0
           test "$PLATFORM" = 3.0.0
           test -z "$FIRMWARE"
+
+  stage-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dependency-manifest
+          path: tests/fixtures/legacy-runner-manifest.json
+  artifact-call:
+    needs: [stage-manifest, legacy-call]
+    uses: ./.github/workflows/vulcan-resolve-modalix-runner.yml
+    with:
+      manifest_artifact: dependency-manifest
+      manifest_path: legacy-runner-manifest.json
+      shared_workflow_ref: ${{ github.event.pull_request.head.sha || github.sha }}
+  verify-artifact:
+    needs: artifact-call
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify downloaded manifest selected the runner group
+        env:
+          GROUP: ${{ needs.artifact-call.outputs.modalix_runner_group }}
+          PLATFORM: ${{ needs.artifact-call.outputs.platform_version }}
+        run: |
+          test "$GROUP" = modalix-devkit-3.0.0
+          test "$PLATFORM" = 3.0.0

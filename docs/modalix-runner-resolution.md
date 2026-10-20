@@ -36,3 +36,10 @@ On the selected DevKit, verify `/etc/build` or `/etc/buildinfo` before installin
 test packages, so stale runner labels fail visibly. Selection and this verification
 do not update firmware. Fallback cannot guarantee ABI compatibility and should be
 used only when the caller's tests support mixed firmware.
+
+Consumers that derive firmware from a built dependency can pass
+`manifest_artifact` and `manifest_path`. The resolver downloads that artifact
+from the current workflow run instead of reading the repository manifest. The
+caller must depend on the producing build job. Core uses `neat-core-dist` and
+`internals-manifest.json` so runner selection follows the exact Internals package
+consumed by its build, including any dependency fallback.

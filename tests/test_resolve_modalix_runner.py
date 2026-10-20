@@ -84,9 +84,10 @@ def test_invalid_or_mismatched_version_fails(version):
         R.resolve(dict(MANIFEST, elxr_version=version), LABELS, inventory([]), 'sima-neat/llima')
 
 
-def test_legacy_manifest_preserves_group_without_inventory():
-    result = R.resolve({'platform-version': '2.0.0'}, LABELS, None, 'sima-neat/llima')
-    assert result['modalix_runner_group'] == 'modalix-devkit'
+@pytest.mark.parametrize('platform,group', [('2.0.0', 'modalix-devkit'), ('3.0.0', 'modalix-devkit-3.0.0'), (' 3.0.0 ', 'modalix-devkit-3.0.0')])
+def test_legacy_manifest_preserves_group_without_inventory(platform, group):
+    result = R.resolve({'platform-version': platform}, LABELS, None, 'sima-neat/llima')
+    assert result['modalix_runner_group'] == group
     assert result['runner_labels'] == LABELS
 
 

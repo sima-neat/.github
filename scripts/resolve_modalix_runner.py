@@ -41,7 +41,7 @@ def select(runners, labels, version, allow_fallback):
 
 def resolve(manifest, labels, get, repository, *, allow_fallback=False,
             repository_private=True, legacy_version='2.0.0', legacy_group='modalix-devkit', prefix='modalix-devkit-'):
-    platform = manifest.get('platform-version', '')
+    platform = str(manifest.get('platform-version', '')).strip()
     if not isinstance(platform, str) or not re.fullmatch(r'[0-9][0-9A-Za-z._+-]*', platform):
         raise ValueError('Missing or invalid platform-version')
     legacy_version, legacy_group, prefix = (value.strip() for value in (legacy_version, legacy_group, prefix))
@@ -105,7 +105,7 @@ def main():
         json.loads(Path(os.environ['MANIFEST_PATH']).read_text()),
         json.loads(os.environ['RUNNER_LABELS']), get, os.environ['GITHUB_REPOSITORY'],
         allow_fallback=os.environ.get('ALLOW_VERSION_FALLBACK', 'false') == 'true',
-        repository_private=json.loads(os.environ['REPOSITORY_PRIVATE']),
+        repository_private=json.loads(os.environ.get('REPOSITORY_PRIVATE') or 'true'),
         legacy_version=os.environ['LEGACY_PLATFORM_VERSION'],
         legacy_group=os.environ['LEGACY_RUNNER_GROUP'], prefix=os.environ['VERSIONED_RUNNER_GROUP_PREFIX'])
     Path('runner-resolution.json').write_text(json.dumps(result, indent=2) + '\n')

@@ -95,8 +95,22 @@ jobs:
           path: shared
           persist-credentials: false
 
+      - name: Inspect firmware selection
+        id: manifest
+        env:
+          MANIFEST_PATH: caller/${{ inputs.manifest_path }}
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+          manifest = json.loads(Path(os.environ['MANIFEST_PATH']).read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"versioned={'true' if 'elxr_version' in manifest else 'false'}\n")
+          PYTHON
+
       - name: Mint runner discovery token
-        if: ${{ env.DISCOVERY_APP_ID != '' }}
+        if: ${{ steps.manifest.outputs.versioned == 'true' && env.DISCOVERY_APP_ID != '' }}
         id: app-token
         uses: actions/create-github-app-token@v2
         with:

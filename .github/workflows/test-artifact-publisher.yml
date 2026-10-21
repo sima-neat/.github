@@ -1,0 +1,28 @@
+name: Test Artifact Publisher
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/vulcan-publish-artifacts.yml'
+      - '.github/workflows/test-artifact-publisher.yml'
+      - 'tests/test_vulcan_cloudfront_invalidation.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/vulcan-publish-artifacts.yml'
+      - '.github/workflows/test-artifact-publisher.yml'
+      - 'tests/test_vulcan_cloudfront_invalidation.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest
+      - run: python -m pytest -q tests/test_vulcan_cloudfront_invalidation.py

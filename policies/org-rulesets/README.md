@@ -17,3 +17,16 @@ The current merge method policy is:
 - `develop`: squash merge only
 - `main`: merge commit only
 - `release-*` and `v[0-9]*.[0-9]*.[0-9]*`: protected by the shared review/deletion/non-fast-forward ruleset
+
+All three policies target `~ALL` repositories, including newly created repositories.
+Keep `repository_name.protected` set to `false`: GitHub rejects `~ALL` when
+repository-name protection is enabled. This flag protects repository names;
+it does not disable the branch rules. Do not replace `~ALL` with a snapshot of
+repository IDs, which would leave future repositories unprotected.
+
+The policies preserve the existing organization-admin bypass and require an
+extra approval for unattributed changes. Repository-specific rules remain
+additive to this shared baseline.
+
+After changing a policy, verify the Enforce Org Rulesets workflow succeeds and
+check inherited rules using `gh api repos/sima-neat/<repository>/rulesets`.

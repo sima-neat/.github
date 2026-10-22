@@ -120,6 +120,8 @@ verify_ruleset() {
     .name == $expected.name and
     .target == $expected.target and
     .enforcement == $expected.enforcement and
+    (.bypass_actors | sorted_or_empty) == ($expected.bypass_actors | sorted_or_empty) and
+    .conditions.repository_name.protected == $expected.conditions.repository_name.protected and
     (.conditions.repository_name.include | sorted_or_empty) == ($expected.conditions.repository_name.include | sorted_or_empty) and
     (.conditions.repository_name.exclude | sorted_or_empty) == ($expected.conditions.repository_name.exclude | sorted_or_empty) and
     (.conditions.ref_name.include | sorted_or_empty) == ($expected.conditions.ref_name.include | sorted_or_empty) and

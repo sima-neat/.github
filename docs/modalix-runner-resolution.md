@@ -31,7 +31,11 @@ The resolver paginates the selected group's inventory and checks its repository
 access. Its `runner-resolution` artifact records requested firmware, selected
 labels, fallback status, and eligible runner names. No credentials are recorded.
 
-Keep `shared_workflow_ref` aligned with the workflow reference (normally `main`).
+`shared_workflow_ref` is required and has no default. Set it to the same branch,
+tag, or commit as the reusable workflow reference. When pinning the workflow to
+a commit, pass that same commit SHA so the resolver script is pinned too.
+Callers that previously omitted this input must add it before adopting this
+workflow revision.
 On the selected DevKit, verify `/etc/build` or `/etc/buildinfo` before installing
 test packages, so stale runner labels fail visibly. Selection and this verification
 do not update firmware. Fallback cannot guarantee ABI compatibility and should be

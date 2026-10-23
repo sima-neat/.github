@@ -22,9 +22,9 @@ on:
         type: string
         default: '["self-hosted", "Linux", "ARM64", "modalix"]'
       shared_workflow_ref:
-        description: Ref containing the resolver script; use the same ref as this workflow.
+        description: Required ref containing the resolver script; use the same ref as this workflow.
+        required: true
         type: string
-        default: main
       legacy_platform_version:
         description: Platform version that uses the legacy Modalix runner group.
         required: false

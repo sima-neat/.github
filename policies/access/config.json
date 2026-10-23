@@ -38,6 +38,9 @@
       ],
       "repos": {
         "core": "write",
+        "codecs": "write",
+        "runner": "write",
+        "scheduler": "write",
         "llima": "write",
         "insight": "write",
         "apps": "write",

@@ -1,14 +1,62 @@
 import importlib.util
+import json
+import os
 from pathlib import Path
+import subprocess
+import sys
+import types
 
 import pytest
 
 SPEC = importlib.util.spec_from_file_location('runner', Path(__file__).parents[1] / 'scripts/resolve_modalix_runner.py')
 R = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(R)
+SOURCE_RUNNER = R
+BUNDLE_SPEC = importlib.util.spec_from_file_location(
+    'bundle', Path(__file__).parents[1] / 'scripts/bundle_modalix_resolver.py')
+BUNDLE = importlib.util.module_from_spec(BUNDLE_SPEC)
+BUNDLE_SPEC.loader.exec_module(BUNDLE)
+EMBEDDED_SOURCE = BUNDLE.bundled_source(BUNDLE.WORKFLOW.read_text())
+EMBEDDED_RUNNER = types.ModuleType('embedded_runner')
+exec(compile(EMBEDDED_SOURCE, str(BUNDLE.WORKFLOW), 'exec'), EMBEDDED_RUNNER.__dict__)
 VERSION = '3.0.0_master_B2263'
 LABELS = ['self-hosted', 'Linux', 'ARM64', 'modalix', 'modalix-som-16gig', 'vulcan-prod']
 MANIFEST = {'platform-version': '3.0.0', 'elxr_version': VERSION}
+
+
+@pytest.fixture(autouse=True, params=[SOURCE_RUNNER, EMBEDDED_RUNNER], ids=['source', 'bundled'])
+def runner_implementation(request, monkeypatch):
+    monkeypatch.setattr(sys.modules[__name__], 'R', request.param)
+
+
+def test_workflow_bundle_matches_reviewed_source():
+    assert EMBEDDED_SOURCE == BUNDLE.SOURCE.read_text()
+
+
+@pytest.mark.parametrize('platform,legacy,prefix,expected', [
+    ('2.0.0', 'modalix-devkit', 'modalix-devkit-', 'modalix-devkit'),
+    ('3.0.0', 'modalix-devkit', 'modalix-devkit-', 'modalix-devkit-3.0.0'),
+    ('2.0.0', 'custom-legacy', 'custom-', 'custom-legacy'),
+    ('3.0.0', 'custom-legacy', 'custom-', 'custom-3.0.0'),
+])
+def test_legacy_entrypoint_without_credentials_or_shared_checkout(tmp_path, platform, legacy, prefix, expected):
+    manifest = tmp_path / 'manifest.json'
+    manifest.write_text(json.dumps({'platform-version': platform}))
+    output = tmp_path / 'output'
+    env = dict(os.environ, MANIFEST_PATH=str(manifest), GITHUB_OUTPUT=str(output),
+               GITHUB_REPOSITORY='sima-neat/core', RUNNER_DISCOVERY_TOKEN='',
+               RUNNER_LABELS=json.dumps(LABELS), LEGACY_PLATFORM_VERSION='2.0.0',
+               LEGACY_RUNNER_GROUP=legacy, VERSIONED_RUNNER_GROUP_PREFIX=prefix,
+               REPOSITORY_PRIVATE='true', ALLOW_VERSION_FALLBACK='false')
+    source = EMBEDDED_SOURCE if R is EMBEDDED_RUNNER else BUNDLE.SOURCE.read_text()
+    subprocess.run([sys.executable, '-'], input=source, text=True, env=env,
+                   cwd=tmp_path, check=True, capture_output=True)
+    outputs = dict(line.split('=', 1) for line in output.read_text().splitlines())
+    assert outputs['modalix_runner_group'] == expected
+    assert outputs['platform_version'] == platform
+    assert outputs['elxr_version'] == ''
+    assert outputs['version_fallback'] == 'false'
+    assert json.loads((tmp_path / 'runner-resolution.json').read_text())['candidate_runners'] == []
 
 
 def runner(name='new', version=VERSION, *, status='online', busy=False, labels=LABELS):

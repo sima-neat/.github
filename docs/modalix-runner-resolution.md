@@ -31,11 +31,16 @@ The resolver paginates the selected group's inventory and checks its repository
 access. Its `runner-resolution` artifact records requested firmware, selected
 labels, fallback status, and eligible runner names. No credentials are recorded.
 
-`shared_workflow_ref` is required and has no default. Set it to the same branch,
-tag, or commit as the reusable workflow reference. When pinning the workflow to
-a commit, pass that same commit SHA so the resolver script is pinned too.
-Callers that previously omitted this input must add it before adopting this
-workflow revision.
+The resolver is bundled directly in the reusable workflow, so pinning the workflow
+to a tag or commit also pins the executed resolver code. No separate shared
+repository checkout, new caller input, or additional permission is needed.
+`shared_workflow_ref` remains an optional, ignored compatibility input for callers
+that already supply it. Existing callers may continue omitting it.
+
+Maintainers edit `scripts/resolve_modalix_runner.py`, then run
+`python3 scripts/bundle_modalix_resolver.py` to refresh the bundled copy. CI checks
+that the copy matches the source and runs the resolver tests against both copies.
+
 On the selected DevKit, verify `/etc/build` or `/etc/buildinfo` before installing
 test packages, so stale runner labels fail visibly. Selection and this verification
 do not update firmware. Fallback cannot guarantee ABI compatibility and should be

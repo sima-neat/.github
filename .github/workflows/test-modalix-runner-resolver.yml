@@ -3,12 +3,14 @@ on:
   push:
     paths:
       - scripts/resolve_modalix_runner.py
+      - scripts/bundle_modalix_resolver.py
       - tests/test_resolve_modalix_runner.py
       - .github/workflows/vulcan-resolve-modalix-runner.yml
       - .github/workflows/test-modalix-runner-resolver.yml
   pull_request:
     paths:
       - scripts/resolve_modalix_runner.py
+      - scripts/bundle_modalix_resolver.py
       - tests/test_resolve_modalix_runner.py
       - .github/workflows/vulcan-resolve-modalix-runner.yml
       - .github/workflows/test-modalix-runner-resolver.yml
@@ -23,12 +25,12 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install pytest
+      - run: python scripts/bundle_modalix_resolver.py --check
       - run: python -m pytest tests/test_resolve_modalix_runner.py -q
   legacy-call:
     uses: ./.github/workflows/vulcan-resolve-modalix-runner.yml
     with:
       manifest_path: tests/fixtures/legacy-runner-manifest.json
-      shared_workflow_ref: ${{ github.event.pull_request.head.sha || github.sha }}
   verify-legacy:
     needs: legacy-call
     runs-on: ubuntu-latest

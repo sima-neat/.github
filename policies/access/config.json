@@ -219,6 +219,24 @@
         "dataset": "write",
         "models": "write"
       }
+    },
+    "model-tools-dev": {
+      "name": "model-tools-dev",
+      "description": "Model tools development",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "model-tools": "maintain"
+      }
+    },
+    "model-tools-owner": {
+      "name": "model-tools-owner",
+      "description": "Code owners for model-tools",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "model-tools": "write"
+      }
     }
   },
   "legacy_teams": {

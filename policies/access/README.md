@@ -71,6 +71,8 @@ Current intended assignments:
 | `ae` | none |
 | `qa` | `all_repository_read` |
 | `model-developers` | none |
+| `model-tools-dev` | none |
+| `model-tools-owner` | none |
 
 Avoid all-repository write, maintain, or admin unless there is a specific
 reviewed need. Prefer repo-specific grants.
@@ -102,6 +104,10 @@ Release and operations stewardship is represented separately through `devops`
 and `admin` repo grants.
 
 The `model-developers` team has write access to `models` for model development.
+
+The `model-tools-dev` team has maintain access to `model-tools`. The
+`model-tools-owner` team has write access for use as
+`@sima-neat/model-tools-owner` in that repository's CODEOWNERS file.
 
 The `cloud` team has maintain access to `vulcan`, `arthas`, and `kerrigan`.
 

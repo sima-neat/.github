@@ -105,8 +105,8 @@ and `admin` repo grants.
 
 The `model-developers` team has write access to `models` for model development.
 
-The `model-tools-dev` team has maintain access to `model-tools`. The
-`model-tools-owner` team has write access for use as
+The `model-tools-dev` team has write access to `model-tools`. The
+`model-tools-owner` team has maintain access for use as
 `@sima-neat/model-tools-owner` in that repository's CODEOWNERS file.
 
 The `cloud` team has maintain access to `vulcan`, `arthas`, and `kerrigan`.

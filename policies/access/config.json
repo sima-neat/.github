@@ -226,7 +226,7 @@
       "privacy": "closed",
       "org_roles": [],
       "repos": {
-        "model-tools": "maintain"
+        "model-tools": "write"
       }
     },
     "model-tools-owner": {
@@ -235,7 +235,7 @@
       "privacy": "closed",
       "org_roles": [],
       "repos": {
-        "model-tools": "write"
+        "model-tools": "maintain"
       }
     }
   },

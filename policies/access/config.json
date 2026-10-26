@@ -229,8 +229,8 @@
         "model-tools": "write"
       }
     },
-    "model-tools-owner": {
-      "name": "model-tools-owner",
+    "owners-model-tools": {
+      "name": "owners-model-tools",
       "description": "Code owners for model-tools",
       "privacy": "closed",
       "org_roles": [],

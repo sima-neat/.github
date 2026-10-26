@@ -216,6 +216,7 @@
       "privacy": "closed",
       "org_roles": [],
       "repos": {
+        "dataset": "write",
         "models": "write"
       }
     }

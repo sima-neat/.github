@@ -9,12 +9,12 @@ owns its separate package database and must not be wrapped as SDK host setup.
 
 | Consumer | Finding and adoption |
 | --- | --- |
-| Core | Unconditional SDK `dpkg --configure -a` after setup. Replace with the helper exported by pinned `vulcan-build.yml`. |
-| Runner | Conditional Ninja bootstrap chains dpkg/APT; existing APT timeout excludes dpkg and update. Install pinned composite action; call helper per operation. |
-| Scheduler | Same Ninja bootstrap; build also refreshes SDK host APT lists for yaml-cpp downloads. Use pinned action for bootstrap; stage the same helper inside the SDK for host index refresh after sysroot preparation. Retain private sysroot update/download/extraction logic. |
-| Codecs | Conditional Ninja/Debian packaging tools bootstrap has unprotected APT update. Use pinned action and helper per operation. |
-| Kernels | EV74 host compiler bootstrap chains dpkg/APT. Use helper from pinned reusable workflow; retain conditional Clang installation. A65/sysroot tools and DevKit setup are separate. |
-| LLiMa | Unconditional dpkg recovery inside SDK build shell. Move to the explicit SDK container boundary through the helper from pinned reusable workflow. |
+| Core | Unconditional SDK `dpkg --configure -a` after setup. Replace with the helper exported by `vulcan-build.yml@main`. |
+| Runner | Conditional Ninja bootstrap chains dpkg/APT; existing APT timeout excludes dpkg and update. Install composite action at `@main`; call helper per operation. |
+| Scheduler | Same Ninja bootstrap; build also refreshes SDK host APT lists for yaml-cpp downloads. Use action at `@main` for bootstrap; stage the same helper inside the SDK for host index refresh after sysroot preparation. Retain private sysroot update/download/extraction logic. |
+| Codecs | Conditional Ninja/Debian packaging tools bootstrap has unprotected APT update. Use action at `@main` and helper per operation. |
+| Kernels | EV74 host compiler bootstrap chains dpkg/APT. Use helper from reusable workflow at `@main`; retain conditional Clang installation. A65/sysroot tools and DevKit setup are separate. |
+| LLiMa | Unconditional dpkg recovery inside SDK build shell. Move to the explicit SDK container boundary through the helper from reusable workflow at `@main`. |
 
 These changes do not alter SDK cache/image selection, dependency lists, firmware,
 sysroot resolution, publication gates, public APIs or package ABI. Repositories
@@ -39,6 +39,6 @@ implementations retain their own transaction contracts.
 - Internals: `develop` at `ce6b01ccdc94c871d765c1477edeb72d4b3f1c59`
 - Model Compiler: `main` at `bfec0bfa8030ccedec9fdba6d729d1fcd3291fa8`
 
-Merge the shared PR first, then consumer PRs pinned to its exact implementation
-commit. Run the affected package setup/build paths; source checks alone do not
+Merge the shared PR into `main` first, then consumer PRs referencing `@main`.
+Each run resolves the helper from the shared revision selected for that run. Run the affected package setup/build paths; source checks alone do not
 qualify product builds, devices, or publication.

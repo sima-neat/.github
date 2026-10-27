@@ -35,7 +35,7 @@ esac
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
 # Match only known lock failures. Other error lines make the operation fatal.
-dpkg_lock='^dpkg: error: (dpkg frontend lock|dpkg database lock|dpkg database area) (was locked|is locked) by another process'
+dpkg_lock='^dpkg: error: (dpkg frontend lock|dpkg database lock|dpkg database area) (was locked|is locked) by (another process|.+ process with pid [0-9]+)'
 apt_lock='^E: (Could not get lock /|Unable to acquire (the dpkg frontend lock|the dpkg administration directory|the dpkg database lock|the dpkg lock|the administration directory)|Unable to lock (directory /|the administration directory))'
 lock_error="$dpkg_lock|$apt_lock"
 report_owner() {

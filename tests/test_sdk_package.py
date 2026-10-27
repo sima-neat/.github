@@ -47,6 +47,11 @@ print('configured')
         self.assertEqual((result.returncode, calls), (0, 2))
         self.assertIn('diagnostics', result.stderr)
 
+    def test_named_dpkg_lock_holder(self):
+        message = 'dpkg: error: dpkg frontend lock was locked by /usr/local/bin/python3.12 process with pid 8'
+        result, calls, _ = self.run_helper(message=message)
+        self.assertEqual((result.returncode, calls), (0, 2))
+
     def test_apt_update_and_install(self):
         for operation in ('update', 'install'):
             result, calls, _ = self.run_helper(operation, APT, status=100)

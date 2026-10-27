@@ -93,7 +93,11 @@
       "privacy": "closed",
       "org_roles": [],
       "repos": {
-        "core": "write"
+        "core": "write",
+        "kernels": "write",
+        "runner": "write",
+        "scheduler": "write",
+        "codecs": "write"
       }
     },
     "owners-apps": {

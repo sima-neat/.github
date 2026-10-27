@@ -1,0 +1,13 @@
+name: Set up SDK package helper
+description: Expose the revision-pinned SDK-container package lock helper to subsequent steps
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        HELPER_SOURCE: ${{ github.action_path }}/../../scripts/sdk-package.sh
+      run: |
+        set -euo pipefail
+        helper_dir=$(mktemp -d "${RUNNER_TEMP}/sdk-package.XXXXXX")
+        install -m 0755 "$HELPER_SOURCE" "$helper_dir/sdk-package.sh"
+        echo "SDK_PACKAGE_HELPER=$helper_dir/sdk-package.sh" >> "$GITHUB_ENV"

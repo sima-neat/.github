@@ -9,6 +9,10 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
+import tarfile
+import tempfile
+from urllib.parse import urlsplit
 import time
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -17,20 +21,12 @@ MIRROR = "https://debian.neat.sima.ai"
 PACKAGE = "simaai-palette-modalix"
 INDEX = "non-free/binary-arm64/Packages.gz"
 
-# Release promotion keeps the master firmware identity but drops ~preBUILD.
-# The base-files payload's /etc/packageinfo identifies this exact firmware.
-RELEASE_FIRMWARE = "3.0.0_master_B2479"
-RELEASE_VERSION = "3.0.0"
-RELEASE_PACKAGES = {
-    "simaai-palette-modalix": "4d0f89d6187f333d22aa931928659c0aa99d203f1b3f7af32d828e8a572f1770",
-    "simaai-base-files-modalix": "e53080e6003a621bbcdc37f01bd186669e31891ded2f9c32c17ac3e3d0a0a1b3",
-}
 
 
 def firmware_identity(value: str) -> tuple[str, str, str]:
-    match = re.fullmatch(r"(3\.0\.0)_(master|develop)_B([1-9][0-9]*)", value)
+    match = re.fullmatch(r"(3\.[0-9]+\.[0-9]+)_(master|develop)_B([1-9][0-9]*)", value)
     if not match:
-        raise ValueError("elxr_version must be 3.0.0_master_B<build> or 3.0.0_develop_B<build>")
+        raise ValueError("elxr_version must be a Platform 3 master/develop firmware identity")
     return match.groups()
 
 
@@ -59,9 +55,9 @@ def fetch(url: str) -> bytes:
     for attempt in range(3):
         try:
             with urlopen(url, timeout=30) as response:
-                data = response.read(16 * 1024 * 1024 + 1)
-            if len(data) > 16 * 1024 * 1024:
-                raise ValueError("mirror response exceeds 16 MiB")
+                data = response.read(64 * 1024 * 1024 + 1)
+            if len(data) > 64 * 1024 * 1024:
+                raise ValueError("mirror response exceeds 64 MiB")
             return data
         except (URLError, TimeoutError):
             if attempt == 2:
@@ -88,45 +84,103 @@ def index_reference(release: str) -> tuple[str, int]:
     return entries[0]
 
 
-def resolve(firmware: str, fetcher=fetch) -> dict:
-    base, branch, build = firmware_identity(firmware)
-    channel = "release" if firmware == RELEASE_FIRMWARE else ("pre-release" if branch == "master" else "daily")
+def package_firmware(archive: bytes) -> str:
+    """Read only packageinfo from a checksum-verified DEB; never extract its paths."""
+    with tempfile.TemporaryDirectory(prefix="sysroot-identity-") as temporary:
+        path = Path(temporary) / "base-files.deb"
+        path.write_bytes(archive)
+        with subprocess.Popen(["dpkg-deb", "--fsys-tarfile", str(path)],
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as process:
+            identities = []
+            try:
+                with tarfile.open(fileobj=process.stdout, mode="r|*") as contents:
+                    for member in contents:
+                        if member.name.removeprefix("./") != "etc/packageinfo":
+                            continue
+                        if not member.isfile() or member.size > 65536:
+                            raise ValueError("invalid base-files packageinfo")
+                        identities.extend(re.findall(
+                            r"^SIMA_PACKAGE_VERSION[ \t]*=[ \t]*([^\s]+)[ \t]*$",
+                            contents.extractfile(member).read().decode(), re.M))
+                process.stdout.read()  # Drain tar padding before waiting for dpkg-deb.
+                if process.wait() != 0:
+                    raise ValueError("could not read base-files package")
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait()
+    if len(identities) != 1:
+        raise ValueError("base-files must identify exactly one firmware")
+    firmware_identity(identities[0])
+    return identities[0]
+
+
+def read_index(channel, fetcher):
     root = f"{MIRROR}/{channel}/dists/agate"
     digest, size = index_reference(fetcher(f"{root}/Release").decode())
-    index_url = f"{root}/non-free/binary-arm64/by-hash/SHA256/{digest}"
-    compressed = fetcher(index_url)
+    url = f"{root}/non-free/binary-arm64/by-hash/SHA256/{digest}"
+    compressed = fetcher(url)
     if len(compressed) != size or hashlib.sha256(compressed).hexdigest() != digest:
         raise ValueError("Packages.gz size or SHA256 does not match Release")
-    text = gzip.decompress(compressed).decode()
+    records = []
+    for record in re.split(r"\n\s*\n", gzip.decompress(compressed).decode()):
+        records.append(dict(line.split(": ", 1) for line in record.splitlines()
+                            if ": " in line and not line[:1].isspace()))
+    return records, {"index_url": url, "index_sha256": digest}
+
+
+def package_record(fields):
+    """Retain the exact index identity, not a mutable inferred version/hash."""
+    for key in ("Version", "Architecture", "Filename", "Size", "SHA256"):
+        if not isinstance(fields.get(key), str) or not fields[key]:
+            raise ValueError(f"missing release package field: {key}")
+    filename = fields["Filename"]
+    if (not filename.startswith("pool/") or urlsplit(filename).query
+            or any(part in {"", ".", ".."} for part in filename.split("/"))
+            or not re.fullmatch(r"[A-Za-z0-9_+~./%-]+", filename)):
+        raise ValueError("invalid release package filename")
+    if (not fields["Size"].isdigit() or int(fields["Size"]) > 64 * 1024 * 1024
+            or not re.fullmatch(r"[0-9a-f]{64}", fields["SHA256"])):
+        raise ValueError("invalid release package size or SHA256")
+    return {key: fields[key] for key in ("Version", "Architecture", "Filename", "Size", "SHA256")}
+
+
+def resolve(firmware: str, fetcher=fetch, identity_reader=package_firmware) -> dict:
+    base, branch, build = firmware_identity(firmware)
+    channel = "pre-release" if branch == "master" else "daily"
+    records, evidence = read_index(channel, fetcher)
     pattern = (rf"{re.escape(base)}~pre{build}" if branch == "master" else
                rf"{re.escape(base)}~git[0-9]{{12}}\.[0-9a-f]{{7,40}}-{build}")
-    if firmware == RELEASE_FIRMWARE:
-        pattern = re.escape(RELEASE_VERSION)
-    matches = set()
-    release_packages = {}
-    for record in re.split(r"\n\s*\n", text):
-        fields = dict(line.split(": ", 1) for line in record.splitlines()
-                      if ": " in line and not line[:1].isspace())
-        version = fields.get("Version", "")
-        name = fields.get("Package")
-        if firmware == RELEASE_FIRMWARE and name in RELEASE_PACKAGES and version == RELEASE_VERSION:
-            architecture = "all" if name == PACKAGE else "arm64"
-            if fields.get("Architecture") != architecture or fields.get("SHA256") != RELEASE_PACKAGES[name]:
-                raise ValueError(f"release package identity changed for {name}; review the B2479 mapping")
-            if name in release_packages:
-                raise ValueError(f"duplicate release package: {name}")
-            release_packages[name] = {key: fields[key] for key in ("Version", "Architecture", "SHA256")}
-        if (fields.get("Package") == PACKAGE and fields.get("Architecture") in {"all", "arm64"}
-                and re.fullmatch(pattern, version)):
-            matches.add(version)
+    versions = {item.get("Version") for item in records
+                if item.get("Package") == PACKAGE and item.get("Architecture") in {"all", "arm64"}
+                and re.fullmatch(pattern, item.get("Version", ""))}
+    matches = [{"sysroot_version": version, "channel": channel, **evidence} for version in versions]
+    if branch == "master":
+        records, evidence = read_index("release", fetcher)
+        # Release promotion removes the build suffix. Match the requested base,
+        # then establish the exact build from the indexed base-files payload.
+        palettes = [item for item in records if item.get("Package") == PACKAGE
+                    and item.get("Architecture") in {"all", "arm64"}
+                    and re.fullmatch(re.escape(base) + r"(?:[-+][0-9A-Za-z.+-]+)?", item.get("Version", ""))]
+        for palette in palettes:
+            base_files = [item for item in records
+                          if item.get("Package") == "simaai-base-files-modalix"
+                          and item.get("Architecture") == "arm64"
+                          and item.get("Version") == palette["Version"]]
+            if len(base_files) != 1:
+                raise ValueError("release Palette requires exactly one matching base-files package")
+            packages = {PACKAGE: package_record(palette),
+                        "simaai-base-files-modalix": package_record(base_files[0])}
+            identity = packages["simaai-base-files-modalix"]
+            archive = fetcher(f"{MIRROR}/release/{identity['Filename']}")
+            if len(archive) != int(identity["Size"]) or hashlib.sha256(archive).hexdigest() != identity["SHA256"]:
+                raise ValueError("base-files size or SHA256 does not match the verified index")
+            if identity_reader(archive) == firmware:
+                matches.append({"sysroot_version": palette["Version"], "channel": "release",
+                                "release_packages": packages, **evidence})
     if len(matches) != 1:
         raise ValueError(f"expected one {PACKAGE} version for {firmware}, found {len(matches)}")
-    if firmware == RELEASE_FIRMWARE and set(release_packages) != set(RELEASE_PACKAGES):
-        raise ValueError("B2479 requires the reviewed release Palette and base-files packages")
-    return {"elxr_version": firmware, "sysroot_version": matches.pop(),
-            **({"release_packages": release_packages} if release_packages else {}),
-            "channel": channel, "package": PACKAGE, "index_url": index_url,
-            "index_sha256": digest}
+    return {"elxr_version": firmware, "package": PACKAGE, **matches[0]}
 
 
 def main() -> None:

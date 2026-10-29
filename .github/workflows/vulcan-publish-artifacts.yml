@@ -480,6 +480,10 @@ jobs:
                   resources.extend((item["resource"], item.get("checksum"))
                                    for item in metadata.get("selectable-resources", []))
                   for resource, expected in resources:
+                      # Container resources are pulled by the installer from their
+                      # registry, rather than uploaded in this artifact bundle.
+                      if resource.startswith(("cr:", "ghcr:")):
+                          continue
                       key = (path.parent / resource).relative_to(download_path).as_posix()
                       actual = checksums.get(key)
                       if actual is None:

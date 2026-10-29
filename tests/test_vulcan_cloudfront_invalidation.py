@@ -204,6 +204,29 @@ def test_metadata_references_must_be_uploaded_with_matching_checksums(tmp_path, 
     validate(tmp_path, [metadata_path], {'extras.tar.gz': 'expected'})
 
 
+@pytest.mark.parametrize('resource', [
+    'ghcr:sima-neat/sdk:develop',
+    'ghcr:sima-neat/sdk@sha256:' + 'a' * 64,
+    'cr:sima-neat/sdk:develop',
+])
+@pytest.mark.parametrize('selectable', [False, True])
+def test_container_resources_do_not_require_bundled_files(tmp_path, resource, selectable) -> None:
+    helpers = publisher_helpers()
+    metadata_path = tmp_path / 'metadata-edgematic-studio.json'
+    metadata = ({'selectable-resources': [{'resource': resource},
+                                          {'resource': 'install.sh', 'checksum': 'expected'}]}
+                if selectable else
+                {'resources': [resource, 'install.sh'],
+                 'resources-checksum': {'install.sh': 'expected'}})
+    metadata_path.write_text(json.dumps(metadata))
+    validate = helpers['validate_metadata_resources']
+    with pytest.raises(SystemExit, match='unpublished resource: install.sh'):
+        validate(tmp_path, [metadata_path], {})
+    with pytest.raises(SystemExit, match='checksum mismatch for resource: install.sh'):
+        validate(tmp_path, [metadata_path], {'install.sh': 'wrong'})
+    validate(tmp_path, [metadata_path], {'install.sh': 'expected'})
+
+
 @pytest.mark.parametrize('status,content_range,payload,expected', [
     (206, 'bytes 0-0/52513526', b'x', True),
     (206, 'bytes 1-1/52513526', b'x', False),

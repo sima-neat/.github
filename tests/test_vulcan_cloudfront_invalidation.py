@@ -88,8 +88,7 @@ def cloudfront_events(verification_results: list[bool], prefix_existed: bool) ->
         "DIST123",
         "https://artifacts.example.com",
         "/core/feature%252Ffoo/abc123",
-        "/core/feature%252Ffoo/abc123/metadata-all.json",
-        "expected-sha256",
+        {"/core/feature%252Ffoo/abc123/metadata-all.json": "expected-sha256"},
         prefix_existed,
     )
     return events
@@ -138,4 +137,68 @@ def test_publish_waits_for_required_invalidation_and_verifies_content() -> None:
     assert '"--query", "Invalidation.Id"' in content
     assert '"aws", "cloudfront", "wait", "invalidation-completed"' in content
     assert "verify_cloudfront_file(" in content
-    assert '("metadata-all.json", "metadata.json", "manifest.json")' in content
+    assert "for key, checksum in sorted(published_checksums.items())" in content
+
+
+def test_metadata_success_does_not_hide_unavailable_package() -> None:
+    helpers = publisher_helpers()
+    events = []
+    outcomes = iter([True, False, True])
+    helpers['verify_cloudfront_file'] = lambda _base, path, _sha: events.append(path) or next(outcomes)
+    helpers['create_cloudfront_invalidation'] = lambda *_args: events.append('invalidate')
+    helpers['ensure_cloudfront_consistency'](
+        'DIST123', 'https://artifacts.example.com', '/core/main/abc',
+        {'/metadata.json': 'metadata-sha', '/package.deb': 'package-sha'}, False,
+    )
+    assert events == ['/metadata.json', '/package.deb', 'invalidate', '/package.deb']
+
+
+@pytest.mark.parametrize('failure', ['503', 'checksum'])
+def test_file_verification_retries_transient_errors_and_corrupt_content(monkeypatch, failure) -> None:
+    import io
+
+    helpers = publisher_helpers()
+    calls = []
+    payload = b'package contents'
+
+    def open_url(url, timeout):
+        calls.append(url)
+        if len(calls) == 1:
+            if failure == '503':
+                raise urllib.error.HTTPError(url, 503, 'Unavailable', {}, None)
+            return io.BytesIO(b'corrupt content')
+        return io.BytesIO(payload)
+
+    monkeypatch.setattr(urllib.request, 'urlopen', open_url)
+    monkeypatch.setattr(time, 'sleep', lambda _delay: None)
+    assert helpers['verify_cloudfront_file'](
+        'https://artifacts.example.com', '/package.deb', hashlib.sha256(payload).hexdigest(),
+    )
+    assert len(calls) == 2
+
+
+def test_persistent_package_failure_blocks_publication() -> None:
+    helpers = publisher_helpers()
+    helpers['verify_cloudfront_file'] = lambda *_args: False
+    helpers['create_cloudfront_invalidation'] = lambda *_args: None
+    with pytest.raises(SystemExit, match='existing commit prefix'):
+        helpers['ensure_cloudfront_consistency'](
+            'DIST123', 'https://artifacts.example.com', '/core/main/abc',
+            {'/package.deb': 'sha'}, True,
+        )
+
+
+@pytest.mark.parametrize('selectable', [False, True])
+def test_metadata_references_must_be_uploaded_with_matching_checksums(tmp_path, selectable) -> None:
+    helpers = publisher_helpers()
+    metadata_path = tmp_path / 'metadata-extras.json'
+    metadata = ({'selectable-resources': [{'resource': 'extras.tar.gz', 'checksum': 'expected'}]}
+                if selectable else
+                {'resources': ['extras.tar.gz'], 'resources-checksum': {'extras.tar.gz': 'expected'}})
+    metadata_path.write_text(json.dumps(metadata))
+    validate = helpers['validate_metadata_resources']
+    with pytest.raises(SystemExit, match='unpublished resource'):
+        validate(tmp_path, [metadata_path], {})
+    with pytest.raises(SystemExit, match='checksum mismatch'):
+        validate(tmp_path, [metadata_path], {'extras.tar.gz': 'wrong'})
+    validate(tmp_path, [metadata_path], {'extras.tar.gz': 'expected'})

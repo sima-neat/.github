@@ -61,3 +61,8 @@ python3 tests/sdk_package_integration.py --image <local-sdk-image>
 The bundle is checked in CI. Integration uses its own disposable container and
 real POSIX package locks; it does not touch existing containers or host packages.
 See [the consumer audit](../../docs/sdk-package-consumer-audit.md) for rollout scope.
+
+The action also exports `SYSROOT_RELEASE_HELPER`, a revision-pinned path to
+`prepare_release_sysroot.py` for the B2479 release sysroot in disposable SDKs.
+See [release provisioning](../../docs/sysroot-resolution.md#platform-30-release-build-b2479)
+for its exact identity, installed-SDK compatibility and validation boundaries.

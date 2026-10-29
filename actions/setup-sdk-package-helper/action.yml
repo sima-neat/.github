@@ -10,4 +10,6 @@ runs:
         set -euo pipefail
         helper_dir=$(mktemp -d "${RUNNER_TEMP}/sdk-package.XXXXXX")
         install -m 0755 "$HELPER_SOURCE" "$helper_dir/sdk-package.sh"
+        install -m 0755 "$(dirname "$HELPER_SOURCE")/prepare_release_sysroot.py" "$helper_dir/prepare_release_sysroot.py"
+        echo "SYSROOT_RELEASE_HELPER=$helper_dir/prepare_release_sysroot.py" >> "$GITHUB_ENV"
         echo "SDK_PACKAGE_HELPER=$helper_dir/sdk-package.sh" >> "$GITHUB_ENV"

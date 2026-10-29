@@ -68,3 +68,37 @@ def test_manifest_migration_and_legacy_compatibility():
     ]:
         with pytest.raises(ValueError):
             R.manifest_selection(manifest)
+
+
+def release_mirror(*, changed=False, missing=False):
+    records = []
+    for name, digest in R.RELEASE_PACKAGES.items():
+        if missing and name != R.PACKAGE:
+            continue
+        records.append(f'Package: {name}\nVersion: 3.0.0\nArchitecture: {"all" if name == R.PACKAGE else "arm64"}\nSHA256: {"0" * 64 if changed else digest}\n')
+    data = gzip.compress('\n'.join(records).encode())
+    digest = hashlib.sha256(data).hexdigest()
+    def fetch(url):
+        assert '/release/dists/agate/' in url
+        if url.endswith('/Release'):
+            return f'SHA256:\n {digest} {len(data)} {R.INDEX}\n'.encode()
+        assert url.endswith('/by-hash/SHA256/' + digest)
+        return data
+    return fetch
+
+
+def test_b2479_release_is_bound_to_reviewed_package_bytes():
+    result = R.resolve('3.0.0_master_B2479', release_mirror())
+    assert result['sysroot_version'] == '3.0.0'
+    assert result['channel'] == 'release'
+    assert result['release_packages']['simaai-base-files-modalix']['SHA256'] == R.RELEASE_PACKAGES['simaai-base-files-modalix']
+    for fetch in [release_mirror(changed=True), release_mirror(missing=True)]:
+        with pytest.raises(ValueError):
+            R.resolve('3.0.0_master_B2479', fetch)
+
+
+def test_other_master_builds_cannot_use_plain_release_version():
+    fetch, calls = mirror(['3.0.0'])
+    with pytest.raises(ValueError, match='expected one'):
+        R.resolve('3.0.0_master_B2480', fetch)
+    assert '/pre-release/' in calls[0]

@@ -21,6 +21,10 @@ def main():
              + (ROOT / "scripts/sdk-package.sh").read_text()
              + 'SDK_PACKAGE_SCRIPT\nchmod 0755 "$helper_dir/sdk-package.sh"\n'
              + 'echo "SDK_PACKAGE_HELPER=$helper_dir/sdk-package.sh" >> "$GITHUB_ENV"\n')
+    shell += ('cat > "$helper_dir/prepare_release_sysroot.py" <<\'RELEASE_SYSROOT_SCRIPT\'\n'
+              + (ROOT / "scripts/prepare_release_sysroot.py").read_text()
+              + 'RELEASE_SYSROOT_SCRIPT\n'
+              + 'echo "SYSROOT_RELEASE_HELPER=$helper_dir/prepare_release_sysroot.py" >> "$GITHUB_ENV"\n')
     expected = before + START + textwrap.indent(shell, "          ") + END + after
     if args.check:
         if expected != current:

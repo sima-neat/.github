@@ -162,17 +162,17 @@ def test_file_verification_retries_transient_errors_and_corrupt_content(monkeypa
     payload = b'package contents'
 
     def open_url(url, timeout):
-        calls.append(url)
+        calls.append(url.full_url)
         if len(calls) == 1:
             if failure == '503':
-                raise urllib.error.HTTPError(url, 503, 'Unavailable', {}, None)
+                raise urllib.error.HTTPError(url.full_url, 503, 'Unavailable', {}, None)
             return io.BytesIO(b'corrupt content')
         return io.BytesIO(payload)
 
     monkeypatch.setattr(urllib.request, 'urlopen', open_url)
     monkeypatch.setattr(time, 'sleep', lambda _delay: None)
     assert helpers['verify_cloudfront_file'](
-        'https://artifacts.example.com', '/package.deb', hashlib.sha256(payload).hexdigest(),
+        'https://artifacts.example.com', '/metadata.json', hashlib.sha256(payload).hexdigest(),
     )
     assert len(calls) == 2
 
@@ -202,3 +202,37 @@ def test_metadata_references_must_be_uploaded_with_matching_checksums(tmp_path, 
     with pytest.raises(SystemExit, match='checksum mismatch'):
         validate(tmp_path, [metadata_path], {'extras.tar.gz': 'wrong'})
     validate(tmp_path, [metadata_path], {'extras.tar.gz': 'expected'})
+
+
+@pytest.mark.parametrize('status,content_range,payload,expected', [
+    (206, 'bytes 0-0/52513526', b'x', True),
+    (206, 'bytes 1-1/52513526', b'x', False),
+    (200, '', b'x' * 100, False),
+    (206, 'bytes 0-0/52513526', b'', False),
+])
+def test_package_readiness_uses_bounded_range_get(monkeypatch, status, content_range, payload, expected):
+    import io
+
+    helpers = publisher_helpers()
+    requests = []
+    reads = []
+
+    class Response(io.BytesIO):
+        def read(self, size=-1):
+            reads.append(size)
+            return super().read(size)
+
+    def open_url(request, timeout):
+        requests.append(request)
+        response = Response(payload)
+        response.status = status
+        response.headers = {'Content-Range': content_range}
+        return response
+
+    monkeypatch.setattr(urllib.request, 'urlopen', open_url)
+    monkeypatch.setattr(time, 'sleep', lambda _delay: None)
+    assert helpers['verify_cloudfront_file'](
+        'https://artifacts.example.com', '/large-package.deb', 'unused-sha',
+    ) is expected
+    assert all(request.get_header('Range') == 'bytes=0-0' for request in requests)
+    assert reads and all(size == 1 for size in reads)

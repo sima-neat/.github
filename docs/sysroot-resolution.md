@@ -1,4 +1,30 @@
-# Resolve sysroot from DevKit firmware
+# Select a release SDK or resolve a development sysroot
+
+## Official releases
+
+For an official Platform release such as `3.0.0`, use an SDK image built for
+that release through the normal SDK build and publication path. Release SDK
+builds obtain the platform packages from
+`https://repo.sima.ai/elxr/deb/release` (the `agate` suite for Platform 3).
+Pin the matching published SDK artifact in the caller's dependency manifest or
+SDK cache configuration and verify its `/etc/sdk-release` platform version.
+Package publication alone does not establish that a matching SDK image has
+been built and published.
+
+Do not run the firmware-to-development-sysroot resolver or `sysroot update`
+to install the plain release version `3.0.0` into an older cached SDK. Do not
+rewrite installed SDK updater scripts to admit release versions. The shared
+resolver below is for daily/pre-release builds; it does not discover releases
+by inspecting firmware identities in release DEBs.
+
+When moving a consumer from a development sysroot to an official release,
+update its SDK pin and platform version together, remove the development
+sysroot provisioning step for that release configuration, and retain its
+normal product build and DevKit qualification checks. Select firmware through
+the release's published firmware artifacts; a `master` build number alone is
+not a release SDK selection policy.
+
+## Daily and pre-release builds
 
 Call `.github/workflows/resolve-sysroot.yml` before the build job. The workflow
 checks out the caller at the tested commit and reads `deps/manifest.json`:
@@ -11,7 +37,7 @@ checks out the caller at the tested commit and reads `deps/manifest.json`:
 ```
 
 Use `needs.resolve-sysroot.outputs.sysroot_version` as the exact version passed to
-`sysroot update` or the repository's provisioning helper. `elxr_version` is also
+`sysroot update` for daily/pre-release provisioning. `elxr_version` is also
 returned for consumers that need the requested firmware identity. This workflow
 does not select runners or update devices.
 

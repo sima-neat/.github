@@ -38,6 +38,16 @@ def manifest_selection(data: dict) -> tuple[str | None, str | None]:
             raise ValueError("elxr_version and platform-version disagree")
         if legacy is not None:
             raise ValueError("remove deprecated sysroot-version when setting elxr_version")
+        sdk = data.get("sdk", {})
+        if not isinstance(sdk, dict):
+            raise ValueError("sdk must be a JSON object")
+        if "sysroot-version" in sdk:
+            pin = sdk["sysroot-version"]
+            _, branch, _ = firmware_identity(firmware)
+            if (branch != "master" or not isinstance(pin, str)
+                    or not re.fullmatch(re.escape(base) + r"(?:[-+][0-9A-Za-z.+-]+)?", pin)):
+                raise ValueError("sdk.sysroot-version must pin an official release matching master firmware base")
+            return firmware, pin
         return firmware, None
     if isinstance(legacy, str) and re.fullmatch(r"3\.0\.0~(?:pre[1-9][0-9]*|git[0-9]{12}\.[0-9a-f]{7,40}-[1-9][0-9]*)", legacy):
         if data.get("platform-version") != "3.0.0":
@@ -106,17 +116,27 @@ def resolve(firmware: str, fetcher=fetch) -> dict:
             "index_sha256": digest}
 
 
+def resolve_manifest(data: dict, fetcher=fetch) -> dict:
+    firmware, version = manifest_selection(data)
+    if firmware and version:
+        # Selection only: consumers must verify the cached release receipt,
+        # package inventory and actual firmware identity before building.
+        return {"elxr_version": firmware, "sysroot_version": version,
+                "channel": "release", "package": PACKAGE, "source": "release-sdk-manifest"}
+    if firmware:
+        return resolve(firmware, fetcher)
+    if isinstance(data.get("sdk"), dict) and "sysroot-version" in data["sdk"]:
+        raise ValueError("official release pins require elxr_version")
+    print("::warning::sysroot-version is deprecated; migrate to elxr_version")
+    return {"elxr_version": "", "sysroot_version": version, "source": "legacy-manifest"}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=Path("deps/manifest.json"))
     parser.add_argument("--receipt", type=Path, default=Path("sysroot-resolution.json"))
     args = parser.parse_args()
-    firmware, legacy = manifest_selection(json.loads(args.manifest.read_text()))
-    if firmware:
-        result = resolve(firmware)
-    else:
-        print("::warning::sysroot-version is deprecated; migrate to elxr_version")
-        result = {"elxr_version": "", "sysroot_version": legacy, "source": "legacy-manifest"}
+    result = resolve_manifest(json.loads(args.manifest.read_text()))
     args.receipt.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))
     if os.environ.get("GITHUB_OUTPUT"):
@@ -125,7 +145,7 @@ def main() -> None:
                 output.write(f"{key}={result[key]}\n")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
-            summary.write(f"Resolved `{firmware or 'legacy manifest'}` → `{result['sysroot_version']}`.\n")
+            summary.write(f"Resolved `{result['elxr_version'] or 'legacy manifest'}` → `{result['sysroot_version']}`.\n")
 
 
 if __name__ == "__main__":

@@ -79,3 +79,64 @@ def test_2499_sysroot_stays_2499_even_when_2501_packages_exist():
     result = R.resolve(selected, fetch)
     assert result['elxr_version'] == firmware
     assert result['sysroot_version'] == '3.0.0~pre2499'
+
+
+def release_manifest():
+    return {'platform-version': '3.0.0', 'elxr_version': '3.0.0_master_B2499',
+            'sdk': {'channel': 'develop', 'sysroot-version': '3.0.0'}}
+
+
+def test_official_pin_avoids_development_index_and_preserves_sdk_identity():
+    def no_network(url):
+        pytest.fail('Official release pin must not search a development index: ' + url)
+    result = R.resolve_manifest(release_manifest(), no_network)
+    assert result == {'elxr_version': '3.0.0_master_B2499', 'sysroot_version': '3.0.0',
+                      'channel': 'release', 'package': R.PACKAGE, 'source': 'release-sdk-manifest'}
+
+
+@pytest.mark.parametrize('pin', [None, '', '3.0.1', '3.0.0~pre2499', '3.0.0\n', '$(id)', 300])
+def test_malformed_or_conflicting_release_pin_fails_closed(pin):
+    data = release_manifest()
+    data['sdk']['sysroot-version'] = pin
+    with pytest.raises(ValueError, match='official release'):
+        R.resolve_manifest(data)
+
+
+def test_release_pin_does_not_allow_develop_firmware_or_legacy_ambiguity():
+    data = release_manifest()
+    data['elxr_version'] = '3.0.0_develop_B2499'
+    with pytest.raises(ValueError):
+        R.resolve_manifest(data)
+    data = release_manifest()
+    data['sysroot-version'] = '3.0.0~pre2499'
+    with pytest.raises(ValueError):
+        R.resolve_manifest(data)
+    data.pop('elxr_version')
+    with pytest.raises(ValueError, match='require elxr_version'):
+        R.resolve_manifest(data)
+
+
+def test_no_release_pin_keeps_verified_development_resolution():
+    data = release_manifest()
+    data['sdk'].pop('sysroot-version')
+    fetch, calls = mirror(['3.0.0~pre2499'])
+    assert R.resolve_manifest(data, fetch)['sysroot_version'] == '3.0.0~pre2499'
+    assert len(calls) == 2
+
+
+def test_release_cli_emits_existing_workflow_outputs_receipt_and_summary(tmp_path, monkeypatch):
+    import json
+    import sys
+    manifest = tmp_path / 'manifest.json'
+    receipt = tmp_path / 'receipt.json'
+    output = tmp_path / 'output'
+    summary = tmp_path / 'summary'
+    manifest.write_text(json.dumps(release_manifest()))
+    monkeypatch.setenv('GITHUB_OUTPUT', str(output))
+    monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+    monkeypatch.setattr(sys, 'argv', ['resolve_sysroot.py', '--manifest', str(manifest), '--receipt', str(receipt)])
+    monkeypatch.setattr(R, 'resolve', lambda *args: pytest.fail('Release CLI must not use development resolution'))
+    R.main()
+    assert json.loads(receipt.read_text())['sysroot_version'] == '3.0.0'
+    assert output.read_text() == 'elxr_version=3.0.0_master_B2499\nsysroot_version=3.0.0\n'
+    assert '3.0.0_master_B2499' in summary.read_text()

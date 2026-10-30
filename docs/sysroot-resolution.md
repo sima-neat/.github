@@ -1,4 +1,4 @@
-# Resolve sysroot from DevKit firmware
+# Resolve SDK sysroot from the manifest
 
 Call `.github/workflows/resolve-sysroot.yml` before the build job. The workflow
 checks out the caller at the tested commit and reads `deps/manifest.json`:
@@ -11,7 +11,8 @@ checks out the caller at the tested commit and reads `deps/manifest.json`:
 ```
 
 Use `needs.resolve-sysroot.outputs.sysroot_version` as the exact version passed to
-`sysroot update` or the repository's provisioning helper. `elxr_version` is also
+`sysroot update` for development versions, or to validate the cached official
+release SDK for explicit release pins. `elxr_version` is also
 returned for consumers that need the requested firmware identity. This workflow
 does not select runners or update devices.
 
@@ -44,3 +45,30 @@ For a local lookup:
 ```sh
 python3 scripts/resolve_sysroot.py --manifest path/to/deps/manifest.json
 ```
+
+## Official release SDKs
+
+Consumers using a published release SDK declare the exact package version under
+`sdk.sysroot-version`, alongside the firmware identity:
+
+```json
+{
+  "platform-version": "3.0.0",
+  "elxr_version": "3.0.0_master_B2499",
+  "sdk": {"channel": "develop", "sysroot-version": "3.0.0"}
+}
+```
+
+The same shared workflow returns `sysroot_version=3.0.0`, preserves the B2499
+`elxr_version`, and records `source=release-sdk-manifest` and `channel=release`.
+It does not search the pre-release/daily index or silently fall back if the pin
+is malformed. The pin must match the master firmware base; develop firmware,
+conflicting top-level legacy pins, nulls and development package versions are
+rejected. Without a nested release pin, existing verified development resolution
+and legacy behavior remain unchanged.
+
+This is manifest selection, not package or firmware qualification. Consumers must
+still verify the running SDK release receipt, actual platform package inventory,
+payload ownership and firmware identity before building. DevKit compatibility
+continues through the separate shared Modalix runner resolver; it must not replace
+the requested SDK identity. No consumer-side release resolver is needed.

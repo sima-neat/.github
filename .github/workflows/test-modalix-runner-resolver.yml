@@ -2,16 +2,20 @@ name: Test Modalix Runner Resolver
 on:
   push:
     paths:
+      - policies/platform-build-compatibility.json
       - scripts/resolve_modalix_runner.py
       - scripts/bundle_modalix_resolver.py
       - tests/test_resolve_modalix_runner.py
+      - tests/test_resolve_sysroot.py
       - .github/workflows/vulcan-resolve-modalix-runner.yml
       - .github/workflows/test-modalix-runner-resolver.yml
   pull_request:
     paths:
+      - policies/platform-build-compatibility.json
       - scripts/resolve_modalix_runner.py
       - scripts/bundle_modalix_resolver.py
       - tests/test_resolve_modalix_runner.py
+      - tests/test_resolve_sysroot.py
       - .github/workflows/vulcan-resolve-modalix-runner.yml
       - .github/workflows/test-modalix-runner-resolver.yml
 permissions:
@@ -26,7 +30,7 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install pytest
       - run: python scripts/bundle_modalix_resolver.py --check
-      - run: python -m pytest tests/test_resolve_modalix_runner.py -q
+      - run: python -m pytest tests/test_resolve_modalix_runner.py tests/test_resolve_sysroot.py -q
   legacy-call:
     uses: ./.github/workflows/vulcan-resolve-modalix-runner.yml
     with:

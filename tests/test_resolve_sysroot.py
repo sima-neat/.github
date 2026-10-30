@@ -68,3 +68,14 @@ def test_manifest_migration_and_legacy_compatibility():
     ]:
         with pytest.raises(ValueError):
             R.manifest_selection(manifest)
+
+
+def test_2499_sysroot_stays_2499_even_when_2501_packages_exist():
+    firmware = '3.0.0_master_B2499'
+    manifest = {'platform-version': '3.0.0', 'elxr_version': firmware}
+    selected, legacy = R.manifest_selection(manifest)
+    assert selected == firmware and legacy is None
+    fetch, _ = mirror(['3.0.0~pre2499', '3.0.0~pre2501'])
+    result = R.resolve(selected, fetch)
+    assert result['elxr_version'] == firmware
+    assert result['sysroot_version'] == '3.0.0~pre2499'

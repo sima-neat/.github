@@ -30,7 +30,7 @@ def runner_implementation(request, monkeypatch):
 
 
 def test_workflow_bundle_matches_reviewed_source():
-    assert EMBEDDED_SOURCE == BUNDLE.SOURCE.read_text()
+    assert EMBEDDED_SOURCE == BUNDLE.rendered_source()
 
 
 @pytest.mark.parametrize('platform,legacy,prefix,expected', [
@@ -49,7 +49,8 @@ def test_legacy_entrypoint_without_credentials_or_shared_checkout(tmp_path, plat
                LEGACY_RUNNER_GROUP=legacy, VERSIONED_RUNNER_GROUP_PREFIX=prefix,
                REPOSITORY_PRIVATE='true', ALLOW_VERSION_FALLBACK='false')
     source = EMBEDDED_SOURCE if R is EMBEDDED_RUNNER else BUNDLE.SOURCE.read_text()
-    subprocess.run([sys.executable, '-'], input=source, text=True, env=env,
+    command = [sys.executable, '-'] if R is EMBEDDED_RUNNER else [sys.executable, str(BUNDLE.SOURCE)]
+    subprocess.run(command, input=source if R is EMBEDDED_RUNNER else None, text=True, env=env,
                    cwd=tmp_path, check=True, capture_output=True)
     outputs = dict(line.split('=', 1) for line in output.read_text().splitlines())
     assert outputs['modalix_runner_group'] == expected
@@ -177,3 +178,68 @@ def test_discovery_needs_only_organization_runner_endpoints():
 def test_empty_legacy_configuration_is_rejected(options):
     with pytest.raises(ValueError, match='must not be empty'):
         R.resolve({'platform-version': '2.0.0'}, LABELS, None, 'sima-neat/llima', **options)
+
+SDK_BASE = '3.0.0_master_B2499'
+DEVKIT_FIRMWARE = '3.0.0_master_B2501'
+
+
+def test_approved_2499_build_selects_only_2501_devkits_without_mutating_manifest():
+    manifest = {'platform-version': '3.0.0', 'elxr_version': SDK_BASE}
+    original = dict(manifest)
+    result = R.resolve(manifest, LABELS, inventory([
+        runner('sysroot-build', SDK_BASE), runner('approved-devkit', DEVKIT_FIRMWARE, busy=True),
+        runner('wrong-hardware', DEVKIT_FIRMWARE, labels=LABELS[:-1]),
+        runner('offline', DEVKIT_FIRMWARE, status='offline'),
+    ]), 'sima-neat/core')
+    assert manifest == original
+    assert result['elxr_version'] == SDK_BASE
+    assert result['devkit_firmware'] == DEVKIT_FIRMWARE
+    assert result['runner_labels'] == LABELS + [DEVKIT_FIRMWARE]
+    assert result['candidate_runners'] == ['approved-devkit']
+    assert result['version_fallback'] is False
+    assert result['compatibility_policy_sha256'] == R.compatibility_policy_sha256()
+    assert len(result['compatibility_policy_sha256']) == 64
+
+
+def test_mapped_build_does_not_accept_2499_runner_when_2501_is_missing():
+    with pytest.raises(ValueError, match=f'No online runner matches firmware {DEVKIT_FIRMWARE}'):
+        R.resolve({'platform-version': '3.0.0', 'elxr_version': SDK_BASE}, LABELS,
+                  inventory([runner(version=SDK_BASE)]), 'sima-neat/core')
+
+
+def test_mapping_is_directional_and_unmapped_builds_keep_exact_matching():
+    for version in [DEVKIT_FIRMWARE, VERSION, '3.0.0_develop_B2499']:
+        result = R.resolve({'platform-version': '3.0.0', 'elxr_version': version}, LABELS,
+                           inventory([runner(version=version)]), 'sima-neat/core')
+        assert result['elxr_version'] == result['devkit_firmware'] == version
+        assert result['runner_labels'] == LABELS + [version]
+
+
+def test_policy_is_bundled_from_the_single_reviewed_json_file():
+    assert R.COMPATIBILITY_POLICY == json.loads(BUNDLE.POLICY.read_text())
+    assert R.compatibility_policy_sha256() == SOURCE_RUNNER.compatibility_policy_sha256()
+
+
+def test_mapping_never_follows_chains():
+    policy = {'schema_version': 1, 'mappings': [
+        {'sdk_base': SDK_BASE, 'devkit_firmware': DEVKIT_FIRMWARE, 'reason': 'approved'},
+        {'sdk_base': DEVKIT_FIRMWARE, 'devkit_firmware': '3.0.0_master_B2502', 'reason': 'separate'},
+    ]}
+    assert R.compatibility_target(SDK_BASE, policy) == DEVKIT_FIRMWARE
+
+
+@pytest.mark.parametrize('policy', [
+    {}, {'schema_version': True, 'mappings': []}, {'schema_version': 2, 'mappings': []},
+    {'schema_version': 1, 'mappings': {}}, {'schema_version': 1, 'mappings': [None]},
+    {'schema_version': 1, 'mappings': [{'sdk_base': SDK_BASE, 'devkit_firmware': '2.0.0_master_B2501', 'reason': 'bad'}]},
+    {'schema_version': 1, 'mappings': [{'sdk_base': SDK_BASE, 'devkit_firmware': '3.0.0_develop_B2501', 'reason': 'bad'}]},
+    {'schema_version': 1, 'mappings': [{'sdk_base': SDK_BASE, 'devkit_firmware': '3.0.0_master_B2501\n', 'reason': 'bad'}]},
+    {'schema_version': 1, 'mappings': [{'sdk_base': SDK_BASE, 'devkit_firmware': DEVKIT_FIRMWARE}]},
+    {'schema_version': 1, 'mappings': [
+        {'sdk_base': SDK_BASE, 'devkit_firmware': DEVKIT_FIRMWARE, 'reason': 'approved'},
+        {'sdk_base': SDK_BASE, 'devkit_firmware': '3.0.0_master_B2502', 'reason': 'ambiguous'},
+    ]},
+])
+def test_invalid_or_ambiguous_policy_fails_closed(policy):
+    with pytest.raises(ValueError):
+        R.compatibility_target(SDK_BASE, policy)

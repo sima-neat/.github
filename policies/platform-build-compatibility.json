@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "mappings": [
+    {
+      "sdk_base": "3.0.0_master_B2499",
+      "devkit_firmware": "3.0.0_master_B2501",
+      "reason": "Approved equivalent platform builds; use published B2499 sysroot with B2501 DevKits."
+    }
+  ]
+}

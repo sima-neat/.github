@@ -53,8 +53,31 @@ class ReleaseIssueGateTest(unittest.TestCase):
             ["apps-0.4.0"],
         )
 
+    def test_core_candidates_use_core_release_without_legacy_fallback(self):
+        self.assertEqual(
+            release_target_candidates("0.6.0", "sima-neat/core"),
+            ["core-0.6.0"],
+        )
+        self.assertEqual(
+            release_target_candidates("core-0.6.0", "sima-neat/core"),
+            ["core-0.6.0"],
+        )
+
+    def test_core_release_scope_ignores_sibling_repository_issues(self):
+        target, issues, _ = resolve_release_issues(
+            items=[issue_item("core-0.6.0", 1, "sima-neat/internals"),
+                   issue_item("core-0.6.0", 2, "sima-neat/core")],
+            release_targets=release_target_candidates("0.6.0", "sima-neat/core"),
+            release_field_name="Target Release",
+            status_field_name="Status",
+            release_status_field_name="Release Status",
+            repository_scope=repository_release_scope("sima-neat/core"),
+        )
+        self.assertEqual(target, "core-0.6.0")
+        self.assertEqual([issue.number for issue in issues], [2])
+
     def test_icl_candidates_prefer_icl_release(self):
-        for repository in ("core", "internals", "llima"):
+        for repository in ("internals", "llima"):
             with self.subTest(repository=repository):
                 self.assertEqual(
                     release_target_candidates("0.4.0", f"sima-neat/{repository}"),

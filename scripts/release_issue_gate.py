@@ -364,6 +364,8 @@ def release_target_candidates(release_version: str, repository: str | None) -> l
 
     if any(release_version.startswith(f"{prefix}-") for prefix in release_prefixes):
         add(release_version)
+    elif repo_name == "core":
+        add(f"core-{release_version}")
     elif repo_name in ICL_RELEASE_REPOSITORIES:
         add(f"icl-{release_version}")
     elif repo_name:

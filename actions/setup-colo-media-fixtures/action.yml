@@ -1,0 +1,18 @@
+name: Set up Colo media fixtures
+description: Export the Core stream fixture variables from the DevKit's Colo media catalog
+inputs:
+  profile:
+    description: Stream groups required by the test job (none, http, or all)
+    default: all
+  config-path:
+    description: Path to the DevKit's Colo service configuration
+    default: /etc/colo-services.json
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        COLO_MEDIA_PROFILE: ${{ inputs.profile }}
+        COLO_SERVICES_CONFIG: ${{ inputs.config-path }}
+      run: |
+        python3 "$GITHUB_ACTION_PATH/setup.py" --profile "$COLO_MEDIA_PROFILE" --config "$COLO_SERVICES_CONFIG"

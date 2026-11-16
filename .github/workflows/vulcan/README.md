@@ -1,7 +1,7 @@
 # Vulcan Workflows
 
-Use the Vulcan reusable build workflow when a Neat repository needs to run an
-SDK-based build on an ephemeral AWS runner.
+Use the Vulcan reusable build workflow when a repository needs to run a
+Palette SDK build on an ephemeral AWS runner.
 
 The workflow lives in this repository at:
 
@@ -77,7 +77,7 @@ Slack bot token explicitly; do not use `secrets: inherit`.
 
 ## Versioned SDK Selection
 
-Repositories that call `vulcan-resolve-config.yml` select a Neat SDK cache with
+Repositories that call `vulcan-resolve-config.yml` select a Palette SDK cache with
 the `sdk` object in `deps/manifest.json`:
 
 ```json

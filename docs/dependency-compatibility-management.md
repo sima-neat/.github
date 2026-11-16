@@ -1,6 +1,6 @@
 # Dependency And Compatibility Management
 
-This is the living dependency and compatibility policy for the Neat repositories.
+This is the living dependency and compatibility policy for the Palette repositories.
 It captures the current contracts used by `internals`, `llima`, `core`, and `apps`
 and should be updated whenever a new dependency-resolution scenario is added.
 
@@ -21,22 +21,22 @@ and should be updated whenever a new dependency-resolution scenario is added.
 The dependency direction is expected to stay acyclic:
 
 ```text
-SDK / platform software -> internals
+Palette SDK / platform software -> internals
 internals -> llima
 internals -> core
 llima -> core
 core -> apps
 ```
 
-`internals`, `llima`, and `core` produce Neat packages. Their package versions
+`internals`, `llima`, and `core` produce runtime packages. Their package versions
 are independent of the SDK release version.
 
 `apps` consumes `core` artifacts and packages runnable examples or app bundles.
 
-The Neat SDK image is different: its version should match the platform software
+The Palette SDK image is different: its version should match the platform software
 version it is built for. For example, an SDK image for platform `2.1.1` should
-be identified as SDK `2.1.1`, while a Neat package inside that SDK can still be
-versioned independently.
+be identified as Palette SDK `2.1.1`, while a runtime package inside that SDK
+can still be versioned independently.
 
 ## `deps/manifest.json`
 
@@ -52,7 +52,7 @@ versions in CI.
 | `platform-version` | all repos | string | Platform software and ABI compatibility line. This should match the SDK/platform line the artifact is built and tested against. |
 | `package-version` | package-producing repos | string | Base package identity for the repo. Used by Debian, CMake, and Python packaging where applicable. |
 
-`platform-version` is not the Neat package version. It answers "which platform
+`platform-version` is not the runtime package version. It answers "which platform
 software line is this compatible with?"
 
 `package-version` is not the SDK version. It answers "what is the package
@@ -202,9 +202,9 @@ and records the resolved core target in `deps/.neat_core`.
 
 ## Versioning Policy
 
-Neat packages and the SDK are versioned for different purposes.
+Runtime packages and Palette SDK are versioned for different purposes.
 
-Neat package repositories:
+Runtime package repositories:
 
 - Use `package-version` as the base version for package artifacts.
 - Use `platform-version` to express platform and ABI compatibility.
@@ -245,12 +245,12 @@ version bump commit.
 `package-version`; CI passes the package version to `sima-cli packages build`
 from the build context.
 
-SDK releases:
+Palette SDK releases:
 
 - Should match the platform software version they are built for.
 - Provide the build container, target sysroot, and cross-compilation environment
   for that platform line.
-- Should not force Neat package repositories to share the SDK version as their
+- Should not force runtime package repositories to share the SDK version as their
   own package version.
 
 Example:

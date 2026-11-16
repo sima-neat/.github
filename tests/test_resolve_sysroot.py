@@ -86,11 +86,17 @@ def release_manifest():
             'sdk': {'channel': 'develop', 'sysroot-version': '3.0.0'}}
 
 
-def test_official_pin_avoids_development_index_and_preserves_sdk_identity():
+@pytest.mark.parametrize('version,firmware', [
+    ('3.0.0', '3.0.0_master_B2499'),
+    ('3.0.1', '3.0.1_master_B2796'),
+])
+def test_official_pin_avoids_development_index_and_preserves_sdk_identity(version, firmware):
     def no_network(url):
         pytest.fail('Official release pin must not search a development index: ' + url)
-    result = R.resolve_manifest(release_manifest(), no_network)
-    assert result == {'elxr_version': '3.0.0_master_B2499', 'sysroot_version': '3.0.0',
+    manifest = {'platform-version': version, 'elxr_version': firmware,
+                'sdk': {'channel': 'develop', 'sysroot-version': version}}
+    result = R.resolve_manifest(manifest, no_network)
+    assert result == {'elxr_version': firmware, 'sysroot_version': version,
                       'channel': 'release', 'package': R.PACKAGE, 'source': 'release-sdk-manifest'}
 
 

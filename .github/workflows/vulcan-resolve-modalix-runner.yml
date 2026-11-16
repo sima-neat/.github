@@ -161,7 +161,7 @@ jobs:
 
 
           # Replaced with the reviewed JSON literal when bundled into the pinned workflow.
-          COMPATIBILITY_POLICY = json.loads('{\n  "schema_version": 1,\n  "mappings": [\n    {\n      "sdk_base": "3.0.0_master_B2499",\n      "devkit_firmware": "3.0.0_master_B2501",\n      "reason": "Approved equivalent platform builds; use published B2499 sysroot with B2501 DevKits."\n    }\n  ]\n}\n')
+          COMPATIBILITY_POLICY = json.loads('{\n  "schema_version": 1,\n  "mappings": [\n    {\n      "sdk_base": "3.0.0_master_B2499",\n      "devkit_firmware": "3.0.0_master_B2501",\n      "reason": "Approved equivalent platform builds; use published B2499 sysroot with B2501 DevKits."\n    },\n    {\n      "sdk_base": "3.0.1_master_B2796",\n      "devkit_firmware": "3.0.1_master_B2798",\n      "reason": "Official 3.0.1 base-files identifies the SDK sysroot as B2796; B2798 is the corresponding physical DevKit firmware release."\n    }\n  ]\n}\n')
 
 
           def compatibility_target(version, policy):

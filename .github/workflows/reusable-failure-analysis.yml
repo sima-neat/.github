@@ -26,7 +26,7 @@ on:
         type: boolean
     secrets:
       openai_api_key:
-        description: API key used only by the tool-free analyzer.
+        description: Deprecated compatibility input; analysis uses the bridge Codex ChatGPT login.
         required: false
       slack_bot_token:
         required: false
@@ -76,9 +76,7 @@ jobs:
         with:
           name: failure-evidence-${{ inputs.run_id }}-${{ inputs.run_attempt }}
           path: evidence
-      - name: Analyze evidence without tools
-        env:
-          OPENAI_API_KEY: ${{ secrets.openai_api_key }}
+      - name: Analyze evidence with Codex CLI
         run: python3 scripts/failure_analysis.py analyze --directory evidence
       - uses: actions/upload-artifact@v6
         with:

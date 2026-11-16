@@ -14,6 +14,16 @@ The first supported capability is release issue validation:
    passes.
 5. Print every touched issue URL in the GitHub Actions log.
 
+## Release targets
+
+Core releases use `core-<version>` as their project Target Release, for example
+`core-0.6.0`. Bare Core version inputs resolve only to that target; they do not
+fall back to `icl-<version>`. Migrate the Core project items before running the
+release workflow. Core validation remains limited to issues in `sima-neat/core`.
+An explicitly prefixed `icl-<version>` input is still accepted for historical
+release validation. Internals and LLiMa retain their existing `icl-<version>`
+targets and repository-specific scope.
+
 ## GitHub App
 
 The workflow expects a dedicated GitHub App named

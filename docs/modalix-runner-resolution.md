@@ -3,7 +3,8 @@
 `vulcan-resolve-modalix-runner.yml` selects the runner group from
 `platform-version` and reads optional `elxr_version` from the caller's dependency
 manifest. For example, `3.0.0_master_B2263` requires that exact GitHub runner
-label. Master and develop identities are distinct.
+label unless an approved compatibility mapping selects a different DevKit build
+(see below). Master and develop identities are distinct.
 
 Pass every required hardware and environment label in the `runner-labels` JSON
 array. Use `modalix_runner_group` and `fromJSON(...runner_labels)` together in
@@ -52,3 +53,35 @@ from the current workflow run instead of reading the repository manifest. The
 caller must depend on the producing build job. Core uses `neat-core-dist` and
 `internals-manifest.json` so runner selection follows the exact Internals package
 consumed by its build, including any dependency fallback.
+
+## Approved SDK-to-DevKit build compatibility
+
+`policies/platform-build-compatibility.json` is the single reviewed source for
+explicit SDK/sysroot-to-DevKit build mappings. The approved entry maps
+`3.0.0_master_B2499` to `3.0.0_master_B2501`: build with the published B2499
+SDK/sysroot, and select B2501 DevKits for testing.
+
+The manifest's `elxr_version` remains the requested SDK/base build. Only the
+runner resolver translates it before matching firmware labels. Sysroot resolution
+continues to use the original identity and does not consult this map. Mappings
+are directional and applied once; unmapped builds still require their own exact
+firmware. A mapping is not version fallback and does not relax hardware labels,
+runner-group access, online status, or repository permissions. The existing
+explicit `allow-version-fallback` option remains unchanged and defaults to false.
+
+The `runner-resolution.json` receipt and reusable workflow outputs expose:
+
+- `elxr_version`: original manifest identity, e.g. `3.0.0_master_B2499`.
+- `devkit_firmware`: target firmware, e.g. `3.0.0_master_B2501`.
+- `compatibility_policy_sha256`: SHA256 of the policy's canonical JSON.
+- `runner_labels`: labels containing the resolved target firmware, unless the
+  caller explicitly enabled fallback and no matching target is available.
+
+Update the JSON map and run `python3 scripts/bundle_modalix_resolver.py` whenever
+compatibility policy changes. This embeds the policy with the resolver in the
+reusable workflow; `--check` rejects stale bundles. Pin the shared workflow commit
+so both code and policy are reproducible, without fetching mutable policy at run
+time. Callers continue declaring B2499 and scheduling with `runner_labels`; they
+must not reconstruct the DevKit label from the unchanged `elxr_version` output.
+No CRACKLS repository logic changes are included here; pinned callers must update
+their shared workflow ref to adopt this policy.

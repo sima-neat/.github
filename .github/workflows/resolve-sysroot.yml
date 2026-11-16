@@ -12,10 +12,10 @@ on:
         default: main
     outputs:
       sysroot_version:
-        description: Exact APT platform package version for sysroot provisioning.
+        description: Exact official release pin or verified development APT platform version.
         value: ${{ jobs.resolve.outputs.sysroot_version }}
       elxr_version:
-        description: Exact requested DevKit firmware identity.
+        description: Requested SDK/sysroot firmware identity; DevKit compatibility is resolved separately.
         value: ${{ jobs.resolve.outputs.elxr_version }}
 permissions:
   contents: read

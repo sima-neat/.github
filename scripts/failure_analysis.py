@@ -6,11 +6,14 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import urllib.error
-import urllib.request
+import tempfile
 
 FAILURES = {'failure', 'timed_out', 'action_required', 'startup_failure', 'stale'}
 FIELDS = ('summary', 'likely_cause', 'evidence', 'next_action', 'confidence')
+# Codex 0.160 reports the deliberately disabled code executor as a startup item.
+DISABLED_CODE_MODE = ('Code Mode is unavailable because code-mode host is disabled. '
+                      'Code mode will fail closed; enable `features.code_mode_host` '
+                      'and install `codex-code-mode-host`.')
 
 
 def redact(text):
@@ -91,64 +94,66 @@ Suggest one practical next action, without executing it. Do not reproduce secret
 Fields: summary, likely_cause, evidence, next_action, confidence (low/medium/high).
 Each text field must be nonempty and at most 1800 characters.
 EVIDENCE JSON:\n''' + json.dumps(context)
-    api_key = os.environ.get('OPENAI_API_KEY')
-    if not api_key:
-        raise ValueError('OPENAI_API_KEY is required for tool-free failure analysis')
-    request_body = {
-        'model': 'gpt-5.6-terra',
-        'instructions': 'Diagnose supplied CI evidence only. Return the required JSON report.',
-        'input': prompt,
-        'tools': [],
-        'tool_choice': 'none',
-        'store': False,
-        'max_output_tokens': 4096,
-        'reasoning': {'effort': 'low'},
-        'text': {'format': {'type': 'json_schema', 'name': 'failure_analysis',
-                            'strict': True, 'schema': json.loads(schema.read_text())}},
-    }
-    request = urllib.request.Request(
-        'https://api.openai.com/v1/responses',
-        data=json.dumps(request_body).encode(),
-        headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json'},
-        method='POST',
-    )
-    # No agent runtime or tool dispatcher exists here. Model output is data only.
-    # Ignore proxy environment variables and never forward credentials on redirects.
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    # Keep the bridge's native Codex login, but do not expose workflow tokens or
+    # API keys to the analyzer. Never copy, parse or export the OAuth credentials.
+    env = {key: os.environ[key] for key in (
+        'HOME', 'PATH', 'CODEX_HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'SSL_CERT_FILE', 'SSL_CERT_DIR'
+    ) if key in os.environ}
     try:
-        with opener.open(request, timeout=120) as response:
-            raw = response.read(131073)
-    except urllib.error.HTTPError as error:
-        raise RuntimeError(f'Analysis API returned HTTP {error.code}') from None
-    except (urllib.error.URLError, TimeoutError):
-        raise RuntimeError('Analysis API connection failed or timed out') from None
-    if len(raw) > 131072:
-        raise ValueError('Analysis API response exceeded size limit')
-    report = parse_response(json.loads(raw))
+        login = subprocess.run(['codex', 'login', 'status'], env=env,
+                               capture_output=True, text=True, check=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        raise RuntimeError('Codex ChatGPT login unavailable for the bridge runner user; run codex login on that host') from None
+    if 'Logged in using ChatGPT' not in login.stdout + login.stderr:
+        raise RuntimeError('Failure analysis requires the bridge runner user to log into Codex with ChatGPT')
+    # Run outside the checkout so project instructions and configuration cannot
+    # influence the diagnosis. Ignore personal config while retaining native auth.
+    with tempfile.TemporaryDirectory(prefix='failure-analysis-') as temporary:
+        root = Path(temporary)
+        result_path = root / 'analysis.json'
+        command = ['codex', 'exec', '--ignore-user-config', '--ephemeral',
+                   '--skip-git-repo-check', '--sandbox', 'read-only',
+                   '--model', 'gpt-6.1-sol', '--json',
+                   '-c', 'approval_policy="never"', '-c', 'web_search="disabled"',
+                   '-c', 'agents.enabled=false', '-c', 'skills.bundled.enabled=false']
+        for feature in ('shell_tool', 'shell_snapshot', 'apps', 'plugins', 'hooks',
+                        'multi_agent', 'code_mode_host', 'browser_use', 'computer_use',
+                        'image_generation', 'view_image', 'memories', 'skill_search',
+                        'goals', 'sleep_tool'):
+            command.extend(['--disable', feature])
+        command.extend(['--output-schema', str(schema.resolve()),
+                        '--output-last-message', str(result_path), '-'])
+        try:
+            result = subprocess.run(command, input=prompt, env=env, cwd=root,
+                                    capture_output=True, text=True, check=True, timeout=600)
+        except (OSError, subprocess.SubprocessError):
+            # Raw CLI output can contain evidence; keep diagnostics out of public logs.
+            raise RuntimeError('Codex CLI analysis failed or timed out; check bridge login and Codex availability') from None
+        validate_codex_events(result.stdout)
+        if result_path.is_symlink() or result_path.stat().st_size > 131072:
+            raise ValueError('Invalid or oversized Codex analysis report')
+        report = validate(json.loads(result_path.read_text()))
     output.write_text(json.dumps(report, indent=2) + '\n')
 
 
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        raise ValueError('Analysis API redirects are not allowed')
-
-
-def parse_response(response):
-    if response.get('status') != 'completed':
-        raise ValueError('Analysis API did not complete')
-    texts = []
-    for item in response.get('output', []):
-        if item.get('type') == 'reasoning':
-            continue
-        if item.get('type') != 'message' or item.get('role') != 'assistant':
-            raise ValueError('Unexpected analysis output; tools are forbidden')
-        for part in item.get('content', []):
-            if part.get('type') != 'output_text':
-                raise ValueError('Analysis returned a refusal or non-text content')
-            texts.append(part['text'])
-    if len(texts) != 1:
-        raise ValueError('Expected exactly one analysis report')
-    return validate(json.loads(texts[0]))
+def validate_codex_events(events):
+    """Reject incomplete sessions and any unexpected execution/tool event."""
+    completed = False
+    for line in events.splitlines():
+        event = json.loads(line)
+        kind = event.get('type')
+        if kind in {'item.started', 'item.updated', 'item.completed'}:
+            item = event.get('item', {})
+            if item.get('type') == 'error' and item.get('message') == DISABLED_CODE_MODE:
+                continue
+            if item.get('type') not in {'agent_message', 'reasoning'}:
+                raise ValueError('Unexpected Codex item; tools are forbidden')
+        elif kind == 'turn.completed':
+            completed = True
+        elif kind not in {'thread.started', 'turn.started'}:
+            raise ValueError('Unexpected or failed Codex analysis event')
+    if not completed:
+        raise ValueError('Codex analysis did not complete')
 
 
 def payload(report, channel, thread_ts, repository, run_id, attempt):

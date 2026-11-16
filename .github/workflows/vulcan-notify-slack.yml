@@ -61,7 +61,7 @@ on:
         value: ${{ jobs.notify.outputs.message_ts }}
     secrets:
       openai_api_key:
-        description: API key used only by the tool-free analyzer.
+        description: Deprecated compatibility input; analysis uses the bridge Codex ChatGPT login.
         required: false
       slack_bot_token:
         description: Slack bot token with chat:write access to the target channel.
@@ -263,5 +263,4 @@ jobs:
       channel_id: ${{ needs.notify.outputs.channel_id }}
       thread_ts: ${{ needs.notify.outputs.message_ts }}
     secrets:
-      openai_api_key: ${{ secrets.openai_api_key }}
       slack_bot_token: ${{ secrets.slack_bot_token }}

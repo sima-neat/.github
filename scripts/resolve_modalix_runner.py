@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Resolve an eligible runner group and exact firmware labels, never change devices."""
+import hashlib
 import json
 import os
 import re
@@ -8,6 +9,40 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+
+
+# Replaced with the reviewed JSON literal when bundled into the pinned workflow.
+COMPATIBILITY_POLICY = json.loads((Path(__file__).resolve().parents[1] / 'policies/platform-build-compatibility.json').read_text())
+
+
+def compatibility_target(version, policy):
+    if not isinstance(policy, dict) or type(policy.get('schema_version')) is not int or policy['schema_version'] != 1:
+        raise ValueError('Unsupported platform compatibility policy schema')
+    entries = policy.get('mappings')
+    if not isinstance(entries, list):
+        raise ValueError('Compatibility mappings must be a list')
+    targets = {}
+    identity = r'(\d+\.\d+\.\d+)_(master|develop)_B[1-9]\d*'
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError('Invalid compatibility mapping')
+        source, target = entry.get('sdk_base'), entry.get('devkit_firmware')
+        source_id = re.fullmatch(identity, source) if isinstance(source, str) else None
+        target_id = re.fullmatch(identity, target) if isinstance(target, str) else None
+        if not source_id or not target_id or source_id.groups() != target_id.groups():
+            raise ValueError('Compatibility mapping must use valid identities from the same platform and channel')
+        if source in targets:
+            raise ValueError(f'Duplicate compatibility mapping for {source}')
+        if not isinstance(entry.get('reason'), str) or not entry['reason'].strip():
+            raise ValueError('Compatibility mapping requires a reason')
+        targets[source] = target
+    # Deliberately one lookup: mappings are directional, never transitive.
+    return targets.get(version, version)
+
+
+def compatibility_policy_sha256():
+    canonical = json.dumps(COMPATIBILITY_POLICY, sort_keys=True, separators=(',', ':')).encode()
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def collect(get, path, key):
@@ -56,7 +91,8 @@ def resolve(manifest, labels, get, repository, *, allow_fallback=False,
     group = legacy_group if platform == legacy_version else prefix + platform
     result = dict(platform_version=platform, modalix_runner_group=group,
                   runner_labels=labels, elxr_version='', version_fallback=False,
-                  candidate_runners=[])
+                  candidate_runners=[], devkit_firmware='',
+                  compatibility_policy_sha256=compatibility_policy_sha256())
     # Preserve older callers that have not adopted the firmware manifest field.
     if 'elxr_version' not in manifest:
         return result
@@ -65,6 +101,7 @@ def resolve(manifest, labels, get, repository, *, allow_fallback=False,
         raise ValueError('Invalid elxr_version; expected 3.0.0_master_B2263 or a develop build')
     if version.split('_', 1)[0] != platform:
         raise ValueError('elxr_version does not match platform-version')
+    devkit_firmware = compatibility_target(version, COMPATIBILITY_POLICY)
     owner = quote(repository.split('/')[0], safe='')
     base = f'/orgs/{owner}/actions/runner-groups'
     groups = [g for g in collect(get, base, 'runner_groups') if g['name'] == group]
@@ -79,8 +116,8 @@ def resolve(manifest, labels, get, repository, *, allow_fallback=False,
         if not any(r['full_name'].casefold() == repository.casefold() for r in repos):
             raise ValueError(f'Repository {repository} has no access to runner group {group}')
     runners = collect(get, f'{base}/{selected["id"]}/runners', 'runners')
-    resolved_labels, fallback, candidates = select(runners, labels, version, allow_fallback)
-    result.update(runner_labels=resolved_labels, elxr_version=version,
+    resolved_labels, fallback, candidates = select(runners, labels, devkit_firmware, allow_fallback)
+    result.update(runner_labels=resolved_labels, elxr_version=version, devkit_firmware=devkit_firmware,
                   version_fallback=fallback, candidate_runners=[r['name'] for r in candidates])
     return result
 

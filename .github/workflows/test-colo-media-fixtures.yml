@@ -1,0 +1,21 @@
+name: Test Colo media fixtures
+on:
+  pull_request:
+    paths:
+      - actions/setup-colo-media-fixtures/**
+      - tests/test_colo_media_fixtures.py
+      - .github/workflows/test-colo-media-fixtures.yml
+  push:
+    branches: [main]
+    paths:
+      - actions/setup-colo-media-fixtures/**
+      - tests/test_colo_media_fixtures.py
+      - .github/workflows/test-colo-media-fixtures.yml
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 -m unittest discover -s tests -p test_colo_media_fixtures.py -v

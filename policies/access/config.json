@@ -37,6 +37,7 @@
         "all_repository_read"
       ],
       "repos": {
+        "vulcan": "write",
         "core": "write",
         "codecs": "write",
         "runner": "write",
@@ -59,7 +60,7 @@
         "polima": "write",
         "kernels": "write",
         "kerrigan": "maintain",
-        "llima-compressor": "maintain"
+        "llima-transformers": "maintain"
       }
     },
     "devops": {

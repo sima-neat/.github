@@ -19,9 +19,9 @@ INDEX = "non-free/binary-arm64/Packages.gz"
 
 
 def firmware_identity(value: str) -> tuple[str, str, str]:
-    match = re.fullmatch(r"(3\.0\.0)_(master|develop)_B([1-9][0-9]*)", value)
+    match = re.fullmatch(r"(3\.0\.[0-9]+)_(master|develop)_B([1-9][0-9]*)", value)
     if not match:
-        raise ValueError("elxr_version must be 3.0.0_master_B<build> or 3.0.0_develop_B<build>")
+        raise ValueError("elxr_version must be 3.0.<patch>_master_B<build> or 3.0.<patch>_develop_B<build>")
     return match.groups()
 
 

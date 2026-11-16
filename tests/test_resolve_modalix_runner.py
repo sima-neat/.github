@@ -64,14 +64,14 @@ def runner(name='new', version=VERSION, *, status='online', busy=False, labels=L
     return dict(name=name, status=status, busy=busy, labels=[{'name': v} for v in labels + [version]])
 
 
-def inventory(runners, *, visibility='all', repositories=None):
+def inventory(runners, *, visibility='all', repositories=None, platform='3.0.0'):
     def get(path):
         if '/repositories?' in path:
             return {'repositories': repositories or []}
         if '/runners?' in path:
             assert '/7/runners?' in path
             return {'runners': runners}
-        return {'runner_groups': [{'name': 'modalix-devkit-3.0.0', 'id': 7, 'visibility': visibility}]}
+        return {'runner_groups': [{'name': f'modalix-devkit-{platform}', 'id': 7, 'visibility': visibility}]}
     return get
 
 
@@ -199,6 +199,19 @@ def test_approved_2499_build_selects_only_2501_devkits_without_mutating_manifest
     assert result['version_fallback'] is False
     assert result['compatibility_policy_sha256'] == R.compatibility_policy_sha256()
     assert len(result['compatibility_policy_sha256']) == 64
+
+
+def test_301_sdk_selects_only_b2798_devkits():
+    platform = '3.0.1'
+    sdk = '3.0.1_master_B2796'
+    devkit = '3.0.1_master_B2798'
+    runners = [runner('sdk-build', sdk), runner('release-devkit', devkit)]
+    result = R.resolve({'platform-version': platform, 'elxr_version': sdk}, LABELS,
+                       inventory(runners, platform=platform), 'sima-neat/llima')
+    assert result['elxr_version'] == sdk
+    assert result['devkit_firmware'] == devkit
+    assert result['runner_labels'] == LABELS + [devkit]
+    assert result['candidate_runners'] == ['release-devkit']
 
 
 def test_mapped_build_does_not_accept_2499_runner_when_2501_is_missing():

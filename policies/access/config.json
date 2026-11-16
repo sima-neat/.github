@@ -60,7 +60,7 @@
         "polima": "write",
         "kernels": "write",
         "kerrigan": "maintain",
-        "llima-compressor": "maintain"
+        "llima-transformers": "maintain"
       }
     },
     "devops": {

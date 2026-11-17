@@ -60,7 +60,8 @@
         "polima": "write",
         "kernels": "write",
         "kerrigan": "maintain",
-        "llima-transformers": "maintain"
+        "llima-transformers": "maintain",
+        "vscode-ext": "maintain"
       }
     },
     "devops": {
@@ -153,6 +154,15 @@
       "org_roles": [],
       "repos": {
         "models": "write"
+      }
+    },
+    "vscode-ext-owners": {
+      "name": "vscode-ext-owners",
+      "description": "Code owners for vscode-ext",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "vscode-ext": "maintain"
       }
     },
     "cloud": {

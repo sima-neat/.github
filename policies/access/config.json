@@ -156,8 +156,8 @@
         "models": "write"
       }
     },
-    "vscode-ext-owners": {
-      "name": "vscode-ext-owners",
+    "owners-vscode-ext": {
+      "name": "owners-vscode-ext",
       "description": "Code owners for vscode-ext",
       "privacy": "closed",
       "org_roles": [],

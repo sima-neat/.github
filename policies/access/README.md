@@ -73,7 +73,7 @@ Current intended assignments:
 | `model-developers` | none |
 | `model-tools-dev` | none |
 | `owners-model-tools` | none |
-| `vscode-ext-owners` | none |
+| `owners-vscode-ext` | none |
 
 Avoid all-repository write, maintain, or admin unless there is a specific
 reviewed need. Prefer repo-specific grants.
@@ -110,8 +110,8 @@ The `model-tools-dev` team has write access to `model-tools`. The
 `owners-model-tools` team has maintain access for use as
 `@sima-neat/owners-model-tools` in that repository's CODEOWNERS file.
 
-The `dev` and `vscode-ext-owners` teams have maintain access to `vscode-ext`.
-The `vscode-ext-owners` team owns the repository's files in CODEOWNERS.
+The `dev` and `owners-vscode-ext` teams have maintain access to `vscode-ext`.
+The `owners-vscode-ext` team owns the repository's files in CODEOWNERS.
 
 The `cloud` team has maintain access to `vulcan`, `arthas`, and `kerrigan`.
 

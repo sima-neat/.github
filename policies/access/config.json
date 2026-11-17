@@ -162,7 +162,7 @@
       "privacy": "closed",
       "org_roles": [],
       "repos": {
-        "vscode-ext": "write"
+        "vscode-ext": "maintain"
       }
     },
     "cloud": {

@@ -110,8 +110,8 @@ The `model-tools-dev` team has write access to `model-tools`. The
 `owners-model-tools` team has maintain access for use as
 `@sima-neat/owners-model-tools` in that repository's CODEOWNERS file.
 
-The `dev` team has maintain access to `vscode-ext`. The `vscode-ext-owners`
-team has write access so it can own the repository's files in CODEOWNERS.
+The `dev` and `vscode-ext-owners` teams have maintain access to `vscode-ext`.
+The `vscode-ext-owners` team owns the repository's files in CODEOWNERS.
 
 The `cloud` team has maintain access to `vulcan`, `arthas`, and `kerrigan`.
 

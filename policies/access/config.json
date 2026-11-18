@@ -61,7 +61,7 @@
         "kernels": "write",
         "kerrigan": "maintain",
         "llima-transformers": "maintain",
-        "vscode-ext": "maintain"
+        "code": "maintain"
       }
     },
     "devops": {
@@ -156,13 +156,13 @@
         "models": "write"
       }
     },
-    "owners-vscode-ext": {
-      "name": "owners-vscode-ext",
-      "description": "Code owners for vscode-ext",
+    "owners-code": {
+      "name": "owners-code",
+      "description": "Code owners for code",
       "privacy": "closed",
       "org_roles": [],
       "repos": {
-        "vscode-ext": "maintain"
+        "code": "maintain"
       }
     },
     "cloud": {

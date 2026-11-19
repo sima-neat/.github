@@ -1,19 +1,16 @@
 # Run with powershell.exe or pwsh -NoProfile -File tests/test_create_gha_runner_windows.ps1.
 # Extract functions without executing setup or needing Windows service privileges.
 $ErrorActionPreference = 'Stop'
-$source = Join-Path $PSScriptRoot '../scripts/create-gha-runner.bat'
-$text = [IO.File]::ReadAllText($source)
-$marker = '# POWERSHELL_' + 'PAYLOAD'
-$payload = $text.Substring($text.IndexOf($marker) + $marker.Length)
+$source = Join-Path $PSScriptRoot '../scripts/create-gha-runner.ps1'
+$payload = [IO.File]::ReadAllText($source)
 $tokens = $null
 $parseErrors = $null
 $ast = [Management.Automation.Language.Parser]::ParseInput($payload, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
-$function = $ast.EndBlock.Statements | Where-Object {
-    $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -eq 'Wait-RunnerService'
+$functions = $ast.EndBlock.Statements | Where-Object {
+    $_ -is [Management.Automation.Language.FunctionDefinitionAst]
 }
-if (-not $function) { throw 'Wait-RunnerService function not found.' }
-. ([scriptblock]::Create($function.Extent.Text))
+foreach ($function in $functions) { . ([scriptblock]::Create($function.Extent.Text)) }
 
 function Write-Host {
     param([string]$Object)
@@ -68,4 +65,29 @@ foreach ($failCim in @($false, $true)) {
     if (-not $failCim -and $output -notmatch '1067') { throw 'Missing Windows exit code.' }
     if ($failCim -and $output -notmatch 'Could not read service details') { throw 'Missing diagnostics fallback.' }
 }
-[Console]::WriteLine('PASS: payload syntax, service startup/recovery, timeout, exit codes, and diagnostics fallback')
+
+# The runner installer can fail before the final service-status check. It must
+# still report service diagnostics and preserve the original configuration error.
+$tempDirectory = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N'))
+$originalLocation = Get-Location
+New-Item -ItemType Directory -Path $tempDirectory | Out-Null
+try {
+    Set-Location -LiteralPath $tempDirectory
+    Set-Content -LiteralPath '.service' -Value 'test-runner'
+    function Invoke-Runner { throw 'Runner command failed with exit code 1.' }
+    Set-TestState @('Stopped')
+    $failure = $null
+    try { Configure-Runner @('configure', '--runasservice') 'service' 'C:\actions-runner' }
+    catch { $failure = $_.Exception.Message }
+    if ($failure -ne 'Runner command failed with exit code 1.') { throw 'Configuration failure was hidden.' }
+    if (($script:messages -join '\n') -notmatch '1067') { throw 'Missing diagnostics after configuration failure.' }
+
+    $script:messages.Clear()
+    Remove-Item -LiteralPath '.service' -Force
+    try { Configure-Runner @('configure') 'none' 'C:\actions-runner' } catch {}
+    if ($script:messages.Count -ne 0) { throw 'Non-service failure reported service diagnostics.' }
+} finally {
+    Set-Location -LiteralPath $originalLocation.Path
+    Remove-Item -LiteralPath $tempDirectory -Recurse -Force
+}
+[Console]::WriteLine('PASS: PowerShell syntax, service startup/recovery, timeout, exit codes, diagnostics fallback, and configuration failure')

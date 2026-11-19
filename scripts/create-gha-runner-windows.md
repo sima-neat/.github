@@ -1,18 +1,20 @@
 # Create a GitHub Actions runner on Windows
 
-Download `create-gha-runner.bat` and run it from Command Prompt:
+Download `create-gha-runner.ps1` and run it from PowerShell. For a Windows service,
+use a terminal with administrator privileges:
 
-```bat
-create-gha-runner.bat
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\create-gha-runner.ps1
 ```
 
-The single batch file uses built-in Windows PowerShell 5.1 for HTTPS requests,
+The script uses built-in Windows PowerShell 5.1 for HTTPS requests,
 JSON, SHA256 verification, ZIP extraction, and hidden token input. It prompts for
 `ORG_ADMIN_TOKEN` if the environment variable is unset. Use a GitHub token with
 permission to manage runners for the chosen organization or repository, just as
 with `create-gha-runner.sh`. The admin token is removed from the setup process's
 environment before invoking installers or runner processes. An environment
-variable already set in the parent terminal remains in that terminal.
+variable already set in the parent terminal remains in that terminal when using
+the separate `powershell.exe` process shown above.
 
 The prompts support organization or repository scope, runner name, labels, work
 folder, ephemeral registration, replacement, installation directory, runner
@@ -23,6 +25,10 @@ organization/repository as the existing registration when recreating it.
 
 Windows-specific defaults and options:
 
+- The install directory defaults to `C:\actions-runner` (or `actions-runner` at the
+  root of the Windows system drive). This follows GitHub's recommendation to
+  avoid service identity permissions and long paths under user profile folders.
+  Choose a different folder at the prompt for additional runners on the same host.
 - `RUNNER_PLATFORM` must be unset or `win`. Architecture detection supports x64,
   ARM64, and x86; `RUNNER_ARCH` overrides it. The selected architecture must have
   a Windows ZIP asset in the latest `actions/runner` release.
@@ -43,6 +49,10 @@ setup returns an error with the observed service state, available Windows exit
 codes, log location, and diagnostic commands. Registration remains intact. A
 service reaching `Running` confirms its Windows state; use GitHub's runner status
 or the listener log to confirm that it is connected and ready for jobs.
+Diagnostics are also shown when GitHub's configuration command installs the
+service but fails while starting it. Changing to PowerShell alone does not prove
+that an existing service startup problem is resolved; inspect the reported events
+and logs if startup still fails.
 
 For an existing installation, run these read-only commands in PowerShell from
 the runner directory (they can also be tried in an SSH session):

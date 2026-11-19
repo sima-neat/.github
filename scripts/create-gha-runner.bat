@@ -106,6 +106,43 @@ function Invoke-Runner([string[]]$RunnerArguments) {
     if ($LASTEXITCODE -ne 0) { throw "Runner command failed with exit code $LASTEXITCODE." }
 }
 
+function Wait-RunnerService([string]$ServiceName, [string]$RunnerDirectory, [int]$TimeoutSeconds = 120) {
+    # The runner's installer reports that StartService was accepted; the service
+    # can still be starting, recovering, or already stopped after a listener error.
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $previousStatus = $null
+    do {
+        $service = Get-Service -Name $ServiceName
+        $status = [string]$service.Status
+        if ($status -ne $previousStatus) {
+            Write-Host "Runner service state: $status"
+            $previousStatus = $status
+        }
+        if ($status -eq 'Running') {
+            Write-Host "Runner Windows service is running: $ServiceName"
+            Write-Host 'Check GitHub runner status or the listener log to confirm it is connected.'
+            return
+        }
+        if ([DateTime]::UtcNow -ge $deadline) { break }
+        Start-Sleep -Seconds 2
+    } while ($true)
+
+    Write-Host 'Runner registration and service installation succeeded; service startup is not confirmed.'
+    try {
+        $details = Get-CimInstance -ClassName Win32_Service | Where-Object { $_.Name -eq $ServiceName }
+        if ($details) {
+            Write-Host "Service state: $($details.State); Win32 exit code: $($details.ExitCode); service exit code: $($details.ServiceSpecificExitCode)"
+            Write-Host "Service account: $($details.StartName)"
+            Write-Host "Service executable: $($details.PathName)"
+        }
+    } catch { Write-Host "Could not read service details: $($_.Exception.Message)" }
+    Write-Host "Diagnostic logs: $RunnerDirectory\_diag"
+    Write-Host "Inspect service state: sc.exe queryex `"$ServiceName`""
+    Write-Host 'Inspect runner service events in PowerShell:'
+    Write-Host "Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='ActionsRunnerService'} -MaxEvents 10 | Format-List TimeCreated,LevelDisplayName,Message"
+    throw "Runner service did not reach Running within $TimeoutSeconds seconds (last observed state: $status). The runner remains registered; inspect diagnostics before recreating it."
+}
+
 $exitCode = 0
 $originalLocation = Get-Location
 $script:ApiToken = $env:ORG_ADMIN_TOKEN
@@ -243,9 +280,7 @@ try {
     switch ($mode) {
         'service' {
             $serviceName = (Get-Content -LiteralPath '.service' -Raw).Trim()
-            $service = Get-Service -Name $serviceName
-            $service.WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
-            Write-Host "Runner Windows service started: $serviceName"
+            Wait-RunnerService $serviceName $installRoot
         }
         'background' {
             # A separate console runs GitHub's wrapper, including its update loop.

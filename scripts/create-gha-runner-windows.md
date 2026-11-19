@@ -38,6 +38,24 @@ Windows-specific defaults and options:
 - `foreground` runs `run.cmd` in the current terminal; `none` registers the runner
   without starting it. Runner diagnostics are in the installation's `_diag` folder.
 
+Service startup is checked for up to two minutes. If startup cannot be confirmed,
+setup returns an error with the observed service state, available Windows exit
+codes, log location, and diagnostic commands. Registration remains intact. A
+service reaching `Running` confirms its Windows state; use GitHub's runner status
+or the listener log to confirm that it is connected and ready for jobs.
+
+For an existing installation, run these read-only commands in PowerShell from
+the runner directory (they can also be tried in an SSH session):
+
+```powershell
+$serviceName = (Get-Content -LiteralPath .service -Raw).Trim()
+Get-Service -Name $serviceName | Format-List Name,Status
+Get-CimInstance -ClassName Win32_Service | Where-Object Name -eq $serviceName |
+    Format-List State,ExitCode,ServiceSpecificExitCode,StartName,PathName
+Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='ActionsRunnerService'} -MaxEvents 10 |
+    Format-List TimeCreated,LevelDisplayName,Message
+```
+
 As in the Bash script, AWS CLI is a prerequisite. If missing, the script offers
 to install AWS CLI v2 using AWS's signed Windows MSI, with a Windows elevation
 prompt. The MSI is x64; ARM64 hosts require Windows x64 emulation. On hosts that

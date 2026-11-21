@@ -26,7 +26,8 @@
         "workshop": "maintain",
         "i18n": "maintain",
         "lerobot": "maintain",
-        "polima": "maintain"
+        "polima": "maintain",
+        "blogs": "maintain"
       }
     },
     "dev": {
@@ -61,7 +62,8 @@
         "kernels": "write",
         "kerrigan": "maintain",
         "llima-transformers": "maintain",
-        "code": "maintain"
+        "code": "maintain",
+        "blogs": "write"
       }
     },
     "devops": {
@@ -86,7 +88,8 @@
         "roadmap": "maintain",
         "model-compiler": "maintain",
         "sdk": "maintain",
-        "kerrigan": "maintain"
+        "kerrigan": "maintain",
+        "blogs": "maintain"
       }
     },
     "owners-core": {
@@ -251,6 +254,15 @@
       "org_roles": [],
       "repos": {
         "model-tools": "maintain"
+      }
+    },
+    "owners-blogs": {
+      "name": "owners-blogs",
+      "description": "Code owners for blogs",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "blogs": "maintain"
       }
     }
   },

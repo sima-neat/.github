@@ -115,6 +115,21 @@ The `owners-code` team owns the repository's files in CODEOWNERS.
 
 The `cloud` team has maintain access to `vulcan`, `arthas`, and `kerrigan`.
 
+The private `blogs` repository uses the following team grants:
+
+| Team | Repository permission |
+|---|---|
+| `dev` | write |
+| `admin` | maintain |
+| `devops` | maintain |
+| `owners-blogs` | maintain |
+
+The `owners-blogs` team owns all repository files through
+`@sima-neat/owners-blogs` in CODEOWNERS. Its initial maintainer is
+`shanguangzai`; team membership is managed in GitHub rather than by this policy.
+Blog reader access will be managed separately through the site's SSO and does
+not require GitHub repository access.
+
 The `qa` team has organization-wide read access and write access for repos
 where QA needs to contribute tests, issues, and validation work:
 

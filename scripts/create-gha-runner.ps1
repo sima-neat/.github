@@ -1,11 +1,4 @@
-@echo off
-setlocal DisableDelayedExpansion
-rem Windows PowerShell 5.1 is included with Windows. Keep this file intact:
-rem the batch launcher executes the embedded PowerShell below without temp files.
-set "GHA_SETUP_FILE=%~f0"
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$text = [IO.File]::ReadAllText($env:GHA_SETUP_FILE); $marker = '# POWERSHELL_' + 'PAYLOAD'; & ([ScriptBlock]::Create($text.Substring($text.IndexOf($marker) + $marker.Length)))"
-exit /b %errorlevel%
-# POWERSHELL_PAYLOAD
+#requires -Version 5.1
 # Windows counterpart of create-gha-runner.sh. No Bash, jq, or unzip required.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -106,6 +99,34 @@ function Invoke-Runner([string[]]$RunnerArguments) {
     if ($LASTEXITCODE -ne 0) { throw "Runner command failed with exit code $LASTEXITCODE." }
 }
 
+function Show-RunnerServiceDiagnostics([string]$ServiceName, [string]$RunnerDirectory) {
+    try {
+        $details = Get-CimInstance -ClassName Win32_Service | Where-Object { $_.Name -eq $ServiceName }
+        if ($details) {
+            Write-Host "Service state: $($details.State); Win32 exit code: $($details.ExitCode); service exit code: $($details.ServiceSpecificExitCode)"
+            Write-Host "Service account: $($details.StartName)"
+            Write-Host "Service executable: $($details.PathName)"
+        }
+    } catch { Write-Host "Could not read service details: $($_.Exception.Message)" }
+    Write-Host "Diagnostic logs: $RunnerDirectory\_diag"
+    Write-Host "Inspect service state: sc.exe queryex `"$ServiceName`""
+    Write-Host 'Inspect runner service events in PowerShell:'
+    Write-Host "Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='ActionsRunnerService'} -MaxEvents 10 | Format-List TimeCreated,LevelDisplayName,Message"
+}
+
+function Configure-Runner([string[]]$ConfigArguments, [string]$Mode, [string]$RunnerDirectory) {
+    try { Invoke-Runner $ConfigArguments }
+    catch {
+        # --runasservice can install the service and then exit nonzero while
+        # starting it. Surface diagnostics even before the final status check.
+        if ($Mode -eq 'service' -and (Test-Path -LiteralPath '.service')) {
+            $serviceName = (Get-Content -LiteralPath '.service' -Raw).Trim()
+            Show-RunnerServiceDiagnostics $serviceName $RunnerDirectory
+        }
+        throw
+    }
+}
+
 function Wait-RunnerService([string]$ServiceName, [string]$RunnerDirectory, [int]$TimeoutSeconds = 120) {
     # The runner's installer reports that StartService was accepted; the service
     # can still be starting, recovering, or already stopped after a listener error.
@@ -128,18 +149,7 @@ function Wait-RunnerService([string]$ServiceName, [string]$RunnerDirectory, [int
     } while ($true)
 
     Write-Host 'Runner registration and service installation succeeded; service startup is not confirmed.'
-    try {
-        $details = Get-CimInstance -ClassName Win32_Service | Where-Object { $_.Name -eq $ServiceName }
-        if ($details) {
-            Write-Host "Service state: $($details.State); Win32 exit code: $($details.ExitCode); service exit code: $($details.ServiceSpecificExitCode)"
-            Write-Host "Service account: $($details.StartName)"
-            Write-Host "Service executable: $($details.PathName)"
-        }
-    } catch { Write-Host "Could not read service details: $($_.Exception.Message)" }
-    Write-Host "Diagnostic logs: $RunnerDirectory\_diag"
-    Write-Host "Inspect service state: sc.exe queryex `"$ServiceName`""
-    Write-Host 'Inspect runner service events in PowerShell:'
-    Write-Host "Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='ActionsRunnerService'} -MaxEvents 10 | Format-List TimeCreated,LevelDisplayName,Message"
+    Show-RunnerServiceDiagnostics $ServiceName $RunnerDirectory
     throw "Runner service did not reach Running within $TimeoutSeconds seconds (last observed state: $status). The runner remains registered; inspect diagnostics before recreating it."
 }
 
@@ -197,8 +207,7 @@ try {
     $work = Read-Default 'Runner work folder' '_work'
     $ephemeral = Read-YesNo 'Ephemeral runner' 'n'
     $replace = Read-YesNo 'Replace existing runner with same name' 'y'
-    $safeName = $runnerName -replace '[^a-zA-Z0-9_.-]', '-'
-    $installRoot = Read-Default 'Install directory' (Join-Path (Get-Location).Path "actions-runner-$org-$safeName")
+    $installRoot = Read-Default 'Install directory' (Join-Path "$env:SystemDrive\" 'actions-runner')
     $installRoot = [IO.Path]::GetFullPath($installRoot)
     $mode = (Read-Default 'Start mode: auto, service, background, foreground, none' 'auto').ToLowerInvariant()
     if ($mode -notin @('auto', 'service', 'background', 'foreground', 'none')) { throw 'Invalid start mode.' }
@@ -274,7 +283,7 @@ try {
     if ($replace) { $configArguments += '--replace' }
     if ($mode -eq 'service') { $configArguments += '--runasservice' }
     Write-Host "Configuring runner for $url..."
-    try { Invoke-Runner $configArguments }
+    try { Configure-Runner $configArguments $mode $installRoot }
     finally { $registrationToken = $null; $configArguments = $null; $script:ApiToken = $null }
 
     switch ($mode) {

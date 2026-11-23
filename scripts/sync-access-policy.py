@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import ssl
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -19,6 +21,10 @@ from typing import Any
 API_BASE = "https://api.github.com"
 API_VERSION = "2022-11-28"
 PER_PAGE = 100
+MAX_RATE_LIMIT_RETRIES = 3
+MAX_RATE_LIMIT_WAIT = 600
+WRITE_INTERVAL = 1.0
+_last_write_finished: float | None = None
 SSL_CONTEXT = ssl.create_default_context()
 try:
     import certifi  # type: ignore[import-not-found]
@@ -70,6 +76,32 @@ def api_headers(token: str) -> dict[str, str]:
     }
 
 
+def rate_limit_delay(exc: urllib.error.HTTPError, body: str, attempt: int) -> float | None:
+    """Retry explicit rate limits only, without retrying permission failures."""
+    headers = exc.headers or {}
+    if exc.code not in {403, 429}:
+        return None
+    if exc.code == 403 and not (
+        headers.get("Retry-After") is not None
+        or headers.get("X-RateLimit-Remaining") == "0"
+        or "rate limit" in body.lower()
+    ):
+        return None
+
+    # At least one minute, then exponential backoff for repeated throttling.
+    delay = 60.0 * (2 ** attempt)
+    for header, is_epoch in (("Retry-After", False), ("X-RateLimit-Reset", True)):
+        if is_epoch and headers.get("X-RateLimit-Remaining") != "0":
+            continue
+        try:
+            value = float(headers.get(header, ""))
+        except (ValueError, TypeError):
+            continue
+        if math.isfinite(value):
+            delay = max(delay, value - time.time() + 1 if is_epoch else value)
+    return delay
+
+
 def request_json(
     token: str,
     method: str,
@@ -85,16 +117,44 @@ def request_json(
         headers["Content-Type"] = "application/json"
 
     request = urllib.request.Request(f"{API_BASE}{path}", data=data, headers=headers, method=method)
-    try:
-        with urllib.request.urlopen(request, timeout=60, context=SSL_CONTEXT) as response:
-            body = response.read()
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        if exc.code == 404 and allow_404:
-            return None
-        raise PolicyError(f"GitHub API {method} {path} failed: HTTP {exc.code}: {body}") from exc
-    except urllib.error.URLError as exc:
-        raise PolicyError(f"GitHub API {method} {path} failed: {exc}") from exc
+    global _last_write_finished
+    is_write = method in {"POST", "PATCH", "PUT", "DELETE"}
+    total_wait = 0.0
+    for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+        if is_write and _last_write_finished is not None:
+            pause = WRITE_INTERVAL - (time.monotonic() - _last_write_finished)
+            if pause > 0:
+                time.sleep(pause)
+        retry_delay = None
+        try:
+            with urllib.request.urlopen(request, timeout=60, context=SSL_CONTEXT) as response:
+                body = response.read()
+            break
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            if exc.code == 404 and allow_404:
+                return None
+            retry_delay = rate_limit_delay(exc, body, attempt)
+            if (
+                retry_delay is None
+                or attempt == MAX_RATE_LIMIT_RETRIES
+                or total_wait + retry_delay > MAX_RATE_LIMIT_WAIT
+            ):
+                raise PolicyError(f"GitHub API {method} {path} failed: HTTP {exc.code}: {body}") from exc
+        except urllib.error.URLError as exc:
+            # Do not replay ambiguous network failures, particularly team creation.
+            raise PolicyError(f"GitHub API {method} {path} failed: {exc}") from exc
+        finally:
+            if is_write:
+                _last_write_finished = time.monotonic()
+        total_wait += retry_delay
+        print(
+            f"GitHub rate limited {method} {path}; waiting {retry_delay:g}s "
+            f"before retry {attempt + 1}/{MAX_RATE_LIMIT_RETRIES}",
+            file=sys.stderr,
+            flush=True,
+        )
+        time.sleep(retry_delay)
 
     if not body:
         return None

@@ -17,6 +17,7 @@ on:
     paths:
       - "policies/access/**"
       - "scripts/sync-access-policy.py"
+      - "tests/test_access_policy*.py"
       - ".github/workflows/apply-access-policy.yml"
   push:
     branches:
@@ -24,6 +25,7 @@ on:
     paths:
       - "policies/access/**"
       - "scripts/sync-access-policy.py"
+      - "tests/test_access_policy*.py"
       - ".github/workflows/apply-access-policy.yml"
 
 permissions:
@@ -37,6 +39,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Test access policy client
+        run: python3 -m unittest discover -s tests -p "test_access_policy*.py"
+
       - name: Report access policy
         run: python3 scripts/sync-access-policy.py --mode report
 
@@ -44,6 +49,7 @@ jobs:
     if: ${{ github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'apply') }}
     runs-on: ubuntu-latest
     environment: org-policy
+    timeout-minutes: 20
     concurrency:
       group: apply-access-policy
       cancel-in-progress: false

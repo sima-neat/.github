@@ -264,6 +264,15 @@
       "repos": {
         "blogs": "maintain"
       }
+    },
+    "owners-linux": {
+      "name": "owners-linux",
+      "description": "Maintainers of sima-neat/simaai-linux",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "simaai-linux": "maintain"
+      }
     }
   },
   "legacy_teams": {

@@ -12,7 +12,7 @@
   "conditions": {
     "repository_name": {
       "include": ["~ALL"],
-      "exclude": [],
+      "exclude": ["simaai-linux"],
       "protected": false
     },
     "ref_name": {

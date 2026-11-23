@@ -250,9 +250,14 @@ is supplied only to the apply step; checkout uses the normal read-only workflow
 token.
 
 Switching identities does not eliminate GitHub secondary rate limits. The
-current sync script still writes each configured grant on each apply and fails
-on a rate-limit response. Request pacing, skipping unchanged grants, and retry
-backoff remain separate improvements; see
+sync script spaces writes by at least one second and retries explicit HTTP
+429 or rate-limit HTTP 403 responses up to three times. It honors `Retry-After`
+and exhausted primary-quota reset headers, otherwise waiting at least one
+minute with exponential backoff. Retry waits have a total budget of ten minutes;
+a longer server-requested wait fails the run instead of retrying early.
+Permission failures and ambiguous network failures are not retried. Each apply
+still writes every configured grant; skipping unchanged grants is a future
+optimization. See
 [GitHub API best practices](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api).
 
 ## Validation
@@ -263,6 +268,7 @@ Run these checks before opening a PR:
 jq empty policies/access/config.json
 python3 scripts/sync-access-policy.py --mode report
 python3 -m py_compile scripts/sync-access-policy.py
+python3 -m unittest discover -s tests -p "test_access_policy*.py"
 actionlint .github/workflows/apply-access-policy.yml
 git diff --check
 ```

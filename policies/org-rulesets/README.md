@@ -14,7 +14,7 @@ After rule insights show the expected impact, change `enforcement` to `active`.
 
 The current merge method policy is:
 
-- `develop`: squash merge only, except in `simaai-linux`, which also allows
+- `develop`: squash merge only, except in `linux`, which also allows
   merge commits and rebase
 - `main`: merge commit only
 - `release-*` and `v[0-9]*.[0-9]*.[0-9]*`: protected by the shared review/deletion/non-fast-forward ruleset
@@ -29,10 +29,10 @@ The policies preserve the existing organization-admin bypass and require an
 extra approval for unattributed changes. Repository-specific rules remain
 additive to this shared baseline.
 
-`require-two-approvals-simaai-linux.json` targets only `simaai-linux`. It
-requires two approvals on that repository's protected branches; GitHub applies
-the strictest setting when rulesets overlap. It lists the same merge methods as
-the shared ruleset, so it does not change the merge method policy above.
+`require-two-approvals-linux.json` targets only `linux`. It requires two
+approvals on that repository's protected branches; GitHub applies the strictest
+setting when rulesets overlap. It lists the same merge methods as the shared
+ruleset, so it does not change the merge method policy above.
 
 After changing a policy, verify the Enforce Org Rulesets workflow succeeds and
 check inherited rules using `gh api repos/sima-neat/<repository>/rulesets`.

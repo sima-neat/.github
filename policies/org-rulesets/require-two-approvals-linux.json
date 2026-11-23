@@ -1,5 +1,5 @@
 {
-  "name": "Require two approvals for simaai-linux",
+  "name": "Require two approvals for linux",
   "target": "branch",
   "enforcement": "active",
   "bypass_actors": [
@@ -11,7 +11,7 @@
   ],
   "conditions": {
     "repository_name": {
-      "include": ["simaai-linux"],
+      "include": ["linux"],
       "exclude": [],
       "protected": false
     },

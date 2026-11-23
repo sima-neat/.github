@@ -196,13 +196,16 @@ remain in `legacy_teams` with `preserve: true`.
 
 ## GitHub App authentication
 
+App: [`palette-org-admin`](https://github.com/organizations/sima-neat/settings/apps/palette-org-admin)
+(App ID `5895412`), installed on `sima-neat` as installation `185181039`.
+
 The apply job uses a dedicated organization-owned GitHub App installation token.
 It does not fall back to `ORG_ADMIN_TOKEN` or `GH_TOKEN` secrets. Report mode
 requires no App credentials. Apply jobs are serialized to avoid overlapping
 policy changes.
 
-Create a private App owned by `sima-neat`, for example
-`sima-neat-access-policy`, with the following permissions:
+Use the private App `palette-org-admin`, owned by `sima-neat`, with the
+following permissions:
 
 | Scope | Permission | Level | Used for |
 |---|---|---|---|

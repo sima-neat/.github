@@ -267,11 +267,11 @@
     },
     "owners-linux": {
       "name": "owners-linux",
-      "description": "Maintainers of sima-neat/simaai-linux",
+      "description": "Maintainers of sima-neat/linux",
       "privacy": "closed",
       "org_roles": [],
       "repos": {
-        "simaai-linux": "maintain"
+        "linux": "maintain"
       }
     }
   },

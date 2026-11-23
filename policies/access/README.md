@@ -130,7 +130,7 @@ The `owners-blogs` team owns all repository files through
 Blog reader access will be managed separately through the site's SSO and does
 not require GitHub repository access.
 
-The `simaai-linux` repository holds the SiMa.ai Linux kernel. It stays private
+The `linux` repository holds the SiMa.ai Linux kernel. It stays private
 until it is published, and uses the following team grant:
 
 | Team | Repository permission |
@@ -140,7 +140,7 @@ until it is published, and uses the following team grant:
 The `owners-linux` team owns all repository files through
 `@sima-neat/owners-linux` in CODEOWNERS. Team membership is managed in GitHub
 rather than by this policy. Pull requests into its protected branches need two
-approvals (`policies/org-rulesets/require-two-approvals-simaai-linux.json`), so
+approvals (`policies/org-rulesets/require-two-approvals-linux.json`), so
 the team needs at least two members.
 
 The `qa` team has organization-wide read access and write access for repos

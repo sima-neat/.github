@@ -273,6 +273,15 @@
       "repos": {
         "linux": "maintain"
       }
+    },
+    "reviewers-linux": {
+      "name": "reviewers-linux",
+      "description": "Contributors and reviewers for sima-neat/linux",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "linux": "write"
+      }
     }
   },
   "legacy_teams": {

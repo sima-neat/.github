@@ -1,5 +1,5 @@
 {
-  "name": "Require two approvals for linux",
+  "name": "Require two approvals",
   "target": "branch",
   "enforcement": "active",
   "bypass_actors": [
@@ -11,12 +11,19 @@
   ],
   "conditions": {
     "repository_name": {
-      "include": ["linux"],
+      "include": [
+        "linux"
+      ],
       "exclude": [],
       "protected": false
     },
     "ref_name": {
-      "include": ["refs/heads/main", "refs/heads/develop", "refs/heads/release-*", "refs/heads/v[0-9]*.[0-9]*.[0-9]*"],
+      "include": [
+        "refs/heads/main",
+        "refs/heads/develop",
+        "refs/heads/release-*",
+        "refs/heads/v[0-9]*.[0-9]*.[0-9]*"
+      ],
       "exclude": []
     }
   },
@@ -24,7 +31,11 @@
     {
       "type": "pull_request",
       "parameters": {
-        "allowed_merge_methods": ["merge", "squash", "rebase"],
+        "allowed_merge_methods": [
+          "merge",
+          "squash",
+          "rebase"
+        ],
         "dismiss_stale_reviews_on_push": true,
         "require_code_owner_review": true,
         "require_last_push_approval": false,

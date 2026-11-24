@@ -131,17 +131,28 @@ Blog reader access will be managed separately through the site's SSO and does
 not require GitHub repository access.
 
 The `linux` repository holds the SiMa.ai Linux kernel. It stays private
-until it is published, and uses the following team grant:
+until it is published, and uses the following team grants:
 
 | Team | Repository permission |
 |---|---|
 | `owners-linux` | maintain |
+| `reviewers-linux` | write |
 
 The `owners-linux` team owns all repository files through
 `@sima-neat/owners-linux` in CODEOWNERS. Team membership is managed in GitHub
 rather than by this policy. Pull requests into its protected branches need two
-approvals (`policies/org-rulesets/require-two-approvals-linux.json`), so
-the team needs at least two members.
+total approvals, including a required code-owner approval
+(`policies/org-rulesets/require-two-approvals.json`). These can come from owners
+and contributors with write access; there is no separate per-team quota. Ensure
+there are enough eligible reviewers other than the author.
+
+`reviewers-linux` can contribute code as well as submit qualifying reviews;
+GitHub write is not a review-only permission. Membership is managed in GitHub.
+The independent per-repository update restriction in
+`policies/org-rulesets/owner-only-merge/` limits merges into Linux main to its
+owner team (plus the existing organization-admin bypass). Owner-team bypass is
+pull-request-only and applies only to that update rule, not review requirements.
+Complete the scratch acceptance in the ruleset README before rollout.
 
 The `qa` team has organization-wide read access and write access for repos
 where QA needs to contribute tests, issues, and validation work:

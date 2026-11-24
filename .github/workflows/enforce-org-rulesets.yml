@@ -1,6 +1,14 @@
 name: Enforce Org Rulesets
 
 on:
+  pull_request:
+    paths:
+      - "policies/org-rulesets/**"
+      - "policies/access/config.json"
+      - "scripts/sync-org-rulesets.sh"
+      - "scripts/org-ruleset-matches.jq"
+      - "tests/test_org_rulesets.py"
+      - ".github/workflows/enforce-org-rulesets.yml"
   workflow_dispatch:
   schedule:
     - cron: "22 * * * *"
@@ -10,14 +18,34 @@ on:
     paths:
       - "policies/org-rulesets/**"
       - "scripts/sync-org-rulesets.sh"
+      - "scripts/org-ruleset-matches.jq"
+      - "tests/test_org_rulesets.py"
+      - "policies/access/config.json"
       - ".github/workflows/enforce-org-rulesets.yml"
 
 permissions:
   contents: read
 
 jobs:
-  sync:
+  validate:
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Check shell syntax and lint
+        run: |
+          bash -n scripts/sync-org-rulesets.sh
+          shellcheck scripts/sync-org-rulesets.sh
+      - name: Test policy rendering, migration and verification
+        run: python3 -m unittest discover -s tests -p test_org_rulesets.py
+
+  sync:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    concurrency:
+      group: enforce-org-rulesets
+      cancel-in-progress: false
     environment: org-policy
     env:
       ORG_NAME: sima-neat

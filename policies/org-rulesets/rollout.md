@@ -26,29 +26,6 @@ Read-only inspection on November 23, 2026 (America/Vancouver):
 Latest inspected success:
 https://github.com/sima-neat/.github/actions/runs/45291203223
 
-The local CLI's earlier HTTP 404/missing `admin:org` result describes that
-personal credential, not the App. The ruleset workflow now uses the existing
-`palette-org-admin` configuration and a short-lived installation token through
-`GH_TOKEN`, without a legacy-token fallback.
-
-The installation permissions inspected on November 23 contained repository
-`administration: write`, `members: write`, `metadata: read`, and
-`organization_custom_org_roles: read`, but not `organization_administration`.
-Organization Administration write must be approved on the App installation;
-the workflow explicitly requests it along with Members read. App-authenticated
-ruleset API acceptance remains unverified. No ruleset, scratch resource or team
-membership has been changed by this implementation.
-
-Read-only App verification was dispatched from commit
-`9ef5b7cb31383cfd838fdec08e2d4d3e1d815521` with `mode=verify`:
-https://github.com/sima-neat/.github/actions/runs/45300552269
-
-Validation passed, but installation-token creation failed with
-`The permissions requested are not granted to this installation.` The API
-verification and sync steps did not run. This is App-authentication evidence,
-independent of the local CLI credential. Approve organization Administration
-write on installation 185181039 and rerun verify before any policy apply.
-
 ## Pending before merge and enforcement
 
 - Run the live two-repository, distinct non-admin actor acceptance matrix in

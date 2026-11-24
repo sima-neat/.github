@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+CHECK_ACCESS=false
+if [[ $# -eq 1 && "$1" == "--check-access" ]]; then
+  CHECK_ACCESS=true
+elif [[ $# -ne 0 ]]; then
+  echo "Usage: $0 [--check-access]" >&2
+  exit 1
+fi
+
 if [[ -z "${ORG_NAME:-}" ]]; then
   echo "ORG_NAME is required"
   exit 1
 fi
 
-API_TOKEN="${ORG_ADMIN_TOKEN:-}"
+API_TOKEN="${GH_TOKEN:-}"
 if [[ -z "${API_TOKEN}" ]]; then
-  echo "Token is required. Set ORG_ADMIN_TOKEN."
+  echo "Set GH_TOKEN to a GitHub App installation token with organization Administration write and Members read."
   exit 1
 fi
 
@@ -17,6 +25,11 @@ POLICY_FILE="${POLICY_FILE:-}"
 API_BASE="https://api.github.com"
 API_VERSION="2022-11-28"
 PER_PAGE=100
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ACCESS_POLICY_FILE="${ACCESS_POLICY_FILE:-policies/access/config.json}"
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf "$WORK_DIR"' EXIT
+RENAME_FILE="${POLICY_DIR}/migrations/renames.json"
 
 if [[ -n "${POLICY_FILE}" && ! -f "${POLICY_FILE}" ]]; then
   echo "Policy file not found: ${POLICY_FILE}"
@@ -114,26 +127,8 @@ verify_ruleset() {
   local actual
   actual="$(api GET "${API_BASE}/orgs/${ORG_NAME}/rulesets/${ruleset_id}")"
 
-  if jq -e --argjson expected "$expected_payload" '
-    def sorted_or_empty: (. // []) | sort;
-
-    .name == $expected.name and
-    .target == $expected.target and
-    .enforcement == $expected.enforcement and
-    (.bypass_actors | sorted_or_empty) == ($expected.bypass_actors | sorted_or_empty) and
-    .conditions.repository_name.protected == $expected.conditions.repository_name.protected and
-    (.conditions.repository_name.include | sorted_or_empty) == ($expected.conditions.repository_name.include | sorted_or_empty) and
-    (.conditions.repository_name.exclude | sorted_or_empty) == ($expected.conditions.repository_name.exclude | sorted_or_empty) and
-    (.conditions.ref_name.include | sorted_or_empty) == ($expected.conditions.ref_name.include | sorted_or_empty) and
-    (.conditions.ref_name.exclude | sorted_or_empty) == ($expected.conditions.ref_name.exclude | sorted_or_empty) and
-    ([.rules[].type] | sort) == ([$expected.rules[].type] | sort) and
-    (
-      ($expected.rules[] | select(.type == "pull_request") | .parameters) as $expected_pr |
-      .rules[] | select(.type == "pull_request") | .parameters |
-      . as $actual_pr |
-      all($expected_pr | keys[]; $actual_pr[.] == $expected_pr[.])
-    )
-  ' <<<"$actual" >/dev/null; then
+  if jq -e --argjson expected "$expected_payload" \
+    -f "${SCRIPT_DIR}/org-ruleset-matches.jq" <<<"$actual" >/dev/null; then
     return 0
   fi
 
@@ -153,7 +148,7 @@ verify_ruleset() {
 
 sync_ruleset_file() {
   local policy_file="$1"
-  local payload ruleset_name rulesets_file match_count ruleset_id
+  local payload ruleset_name rulesets_file match_count ruleset_id aliases existing
 
   payload="$(jq -c '.' "$policy_file")"
   ruleset_name="$(jq -r '.name // empty' "$policy_file")"
@@ -162,6 +157,10 @@ sync_ruleset_file() {
     exit 1
   fi
 
+  aliases='[]'
+  if [[ -f "$RENAME_FILE" ]]; then
+    aliases="$(jq -c --arg name "$ruleset_name" '.[$name] // []' "$RENAME_FILE")"
+  fi
   rulesets_file="$(mktemp)"
   if ! list_rulesets >"$rulesets_file"; then
     rm -f "$rulesets_file"
@@ -169,13 +168,13 @@ sync_ruleset_file() {
   fi
 
   match_count="$(
-    jq -s --arg name "$ruleset_name" \
-      '[.[] | select(.name == $name and .target == "branch")] | length' \
+    jq -s --arg name "$ruleset_name" --argjson aliases "$aliases" \
+      '[.[] | select(.name as $n | $n == $name or ($aliases | index($n)) != null)] | length' \
       "$rulesets_file"
   )"
 
   if (( match_count > 1 )); then
-    echo "Found ${match_count} branch rulesets named '${ruleset_name}'. Refusing to choose one."
+    echo "Found ${match_count} canonical/legacy rulesets for '${ruleset_name}'. Refusing an ambiguous migration; existing protections are unchanged."
     rm -f "$rulesets_file"
     exit 1
   fi
@@ -185,10 +184,15 @@ sync_ruleset_file() {
     ruleset_id="$(api POST "${API_BASE}/orgs/${ORG_NAME}/rulesets" "$payload" | jq -r '.id')"
   else
     ruleset_id="$(
-      jq -r --arg name "$ruleset_name" \
-        'select(.name == $name and .target == "branch") | .id' \
+      jq -r --arg name "$ruleset_name" --argjson aliases "$aliases" \
+        'select(.name as $n | $n == $name or ($aliases | index($n)) != null) | .id' \
         "$rulesets_file"
     )"
+    existing="$(api GET "${API_BASE}/orgs/${ORG_NAME}/rulesets/${ruleset_id}")"
+    if ! jq -e --argjson expected "$payload" '.target == $expected.target' <<<"$existing" >/dev/null; then
+      echo "Ruleset ${ruleset_id} has a different target; refusing to repurpose it." >&2
+      exit 1
+    fi
     echo "Updating org ruleset: ${ruleset_name} (${ruleset_id})"
     api PUT "${API_BASE}/orgs/${ORG_NAME}/rulesets/${ruleset_id}" "$payload" >/dev/null
   fi
@@ -199,7 +203,49 @@ sync_ruleset_file() {
   echo "Org ruleset sync complete: ${ruleset_name} (${ruleset_id})"
 }
 
-if [[ -n "${POLICY_FILE}" ]]; then
+prepare_owner_policies() {
+  local directory="${POLICY_DIR}/owner-only-merge"
+  local mapping="${directory}/repositories.json"
+  local repository team team_json team_id
+  [[ -f "$mapping" ]] || return 0
+
+  jq -e 'type == "object" and length > 0 and
+    all(to_entries[];
+      (.key | test("^[A-Za-z0-9_.-]+$")) and
+      (.key != "." and .key != "..") and
+      (.value | type == "string" and test("^[a-z0-9]+(-[a-z0-9]+)*$")))' \
+    "$mapping" >/dev/null || { echo "Invalid owner-team mapping: $mapping" >&2; return 1; }
+
+  while IFS=$'\t' read -r repository team; do
+    if ! jq -e --arg team "$team" --arg repo "$repository" '
+      .teams[$team].name == $team and
+      (.teams[$team].repos[$repo] | IN("write", "push", "maintain", "admin"))
+    ' "$ACCESS_POLICY_FILE" >/dev/null; then
+      echo "Owner team $team needs a write/maintain/admin access-policy grant for $repository" >&2
+      return 1
+    fi
+    if ! team_json="$(api GET "${API_BASE}/orgs/${ORG_NAME}/teams/${team}")"; then
+      echo "Cannot resolve owner team $team for $repository; apply the access policy first." >&2
+      return 1
+    fi
+    team_id="$(jq -er --arg slug "$team" '
+      select(.slug == $slug) | .id | select(type == "number" and . > 0)
+    ' <<<"$team_json")" || { echo "Invalid team response for $team" >&2; return 1; }
+    jq --arg repo "$repository" --argjson team_id "$team_id" '
+      .name = "Owner-only merges for \($repo)" |
+      .conditions.repository_name.include = [$repo] |
+      .bypass_actors += [{actor_id: $team_id, actor_type: "Team", bypass_mode: "pull_request"}]
+    ' "${directory}/template.json" >"${WORK_DIR}/owner-${repository}.json"
+    policy_files+=("${WORK_DIR}/owner-${repository}.json")
+  done < <(jq -r 'to_entries | sort_by(.key)[] | [.key, .value] | @tsv' "$mapping")
+}
+
+if [[ "$CHECK_ACCESS" == true ]]; then
+  policy_files=()
+  prepare_owner_policies
+  list_rulesets >/dev/null
+  echo "App API access verified: organization rulesets listed and configured owner teams resolved; no writes performed."
+elif [[ -n "${POLICY_FILE}" ]]; then
   sync_ruleset_file "$POLICY_FILE"
 else
   policy_files=()
@@ -211,6 +257,8 @@ else
     echo "No ruleset policy files found in ${POLICY_DIR}"
     exit 1
   fi
+
+  prepare_owner_policies
 
   for policy_file in "${policy_files[@]}"; do
     sync_ruleset_file "$policy_file"

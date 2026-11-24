@@ -79,7 +79,7 @@ class RulesetTests(unittest.TestCase):
         curl.write_text(FAKE_CURL)
         curl.chmod(0o755)
         self.env = dict(os.environ, PATH=f'{binary}:{os.environ["PATH"]}',
-                        ORG_NAME='test-org', ORG_ADMIN_TOKEN='fake-test-token',
+                        ORG_NAME='test-org', GH_TOKEN='fake-test-token',
                         POLICY_DIR=str(self.policies), ACCESS_POLICY_FILE=str(self.access),
                         MOCK_STATE=str(self.state))
         self.env.pop('POLICY_FILE', None)
@@ -90,8 +90,8 @@ class RulesetTests(unittest.TestCase):
     def read_state(self):
         return json.loads(self.state.read_text())
 
-    def run_sync(self, success=True):
-        result = subprocess.run(['bash', str(ROOT / 'scripts/sync-org-rulesets.sh')],
+    def run_sync(self, success=True, args=()):
+        result = subprocess.run(['bash', str(ROOT / 'scripts/sync-org-rulesets.sh'), *args],
                                 env=self.env, text=True, capture_output=True, cwd=ROOT)
         self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
         return result
@@ -187,6 +187,22 @@ class RulesetTests(unittest.TestCase):
         result = self.run_sync(success=False)
         self.assertIn('Cannot resolve owner team owners-linux', result.stderr)
         self.assertTrue(all(method == 'GET' for method, _ in self.read_state()['calls']))
+
+    def test_legacy_token_is_not_an_authentication_fallback(self):
+        self.env.pop('GH_TOKEN')
+        self.env['ORG_ADMIN_TOKEN'] = 'unused-legacy-test-token'
+        self.env['GITHUB_TOKEN'] = 'unused-workflow-test-token'
+        result = self.run_sync(success=False)
+        self.assertIn('Set GH_TOKEN to a GitHub App installation token', result.stdout)
+        self.assertEqual(self.read_state()['calls'], [])
+
+    def test_access_check_lists_rulesets_and_resolves_teams_without_writes(self):
+        result = self.run_sync(args=('--check-access',))
+        self.assertIn('no writes performed', result.stdout)
+        calls = self.read_state()['calls']
+        self.assertIn(['GET', '/orgs/test-org/teams/owners-linux'], calls)
+        self.assertIn(['GET', '/orgs/test-org/rulesets'], calls)
+        self.assertTrue(all(method == 'GET' for method, _ in calls))
 
     def test_same_name_tag_ruleset_is_not_repurposed(self):
         state = self.read_state()

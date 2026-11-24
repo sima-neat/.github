@@ -221,9 +221,17 @@ following permissions:
 | Scope | Permission | Level | Used for |
 |---|---|---|---|
 | Organization | Members | Read and write | Create/update teams and assign organization roles |
+| Organization | Administration | Read and write | Enforce organization rulesets through the separate ruleset workflow |
 | Organization | Custom organization roles | Read-only | Look up organization role IDs |
 | Repository | Administration | Read and write | Grant/remove team repository access |
 | Repository | Metadata | Read-only (automatic) | Repository metadata and team visibility |
+
+The ruleset workflow reuses this App configuration. Its token requests only
+organization Administration write and Members read, while the Access Policy
+workflow requests its existing repository Administration, Members and custom-org-role
+permissions. Approve the new organization Administration permission on the
+installation before verifying ruleset API access. That permission is distinct
+from repository Administration.
 
 Use this repository's URL as the homepage. Disable webhooks; no webhook events,
 callback URL, or user authorization flow is needed. Keep this App separate from

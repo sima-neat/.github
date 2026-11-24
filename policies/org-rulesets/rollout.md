@@ -26,11 +26,18 @@ Read-only inspection on November 23, 2026 (America/Vancouver):
 Latest inspected success:
 https://github.com/sima-neat/.github/actions/runs/45291203223
 
-The local GitHub CLI credential cannot list/administer organization rulesets:
-`GET /orgs/sima-neat/rulesets` returned HTTP 404 and the CLI reported the missing
-`admin:org` scope. Reading inherited rules through Linux's repository endpoint
-does not supply organization-rule write authorization. No policy was applied,
-no scratch resource was created, and no team membership was changed.
+The local CLI's earlier HTTP 404/missing `admin:org` result describes that
+personal credential, not the App. The ruleset workflow now uses the existing
+`palette-org-admin` configuration and a short-lived installation token through
+`GH_TOKEN`, without a legacy-token fallback.
+
+The installation permissions inspected on November 23 contained repository
+`administration: write`, `members: write`, `metadata: read`, and
+`organization_custom_org_roles: read`, but not `organization_administration`.
+Organization Administration write must be approved on the App installation;
+the workflow explicitly requests it along with Members read. App-authenticated
+ruleset API acceptance remains unverified. No ruleset, scratch resource or team
+membership has been changed by this implementation.
 
 ## Pending before merge and enforcement
 

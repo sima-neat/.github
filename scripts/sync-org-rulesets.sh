@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+CHECK_ACCESS=false
+if [[ $# -eq 1 && "$1" == "--check-access" ]]; then
+  CHECK_ACCESS=true
+elif [[ $# -ne 0 ]]; then
+  echo "Usage: $0 [--check-access]" >&2
+  exit 1
+fi
+
 if [[ -z "${ORG_NAME:-}" ]]; then
   echo "ORG_NAME is required"
   exit 1
 fi
 
-API_TOKEN="${ORG_ADMIN_TOKEN:-}"
+API_TOKEN="${GH_TOKEN:-}"
 if [[ -z "${API_TOKEN}" ]]; then
-  echo "Token is required. Set ORG_ADMIN_TOKEN."
+  echo "Set GH_TOKEN to a GitHub App installation token with organization Administration write and Members read."
   exit 1
 fi
 
@@ -232,7 +240,12 @@ prepare_owner_policies() {
   done < <(jq -r 'to_entries | sort_by(.key)[] | [.key, .value] | @tsv' "$mapping")
 }
 
-if [[ -n "${POLICY_FILE}" ]]; then
+if [[ "$CHECK_ACCESS" == true ]]; then
+  policy_files=()
+  prepare_owner_policies
+  list_rulesets >/dev/null
+  echo "App API access verified: organization rulesets listed and configured owner teams resolved; no writes performed."
+elif [[ -n "${POLICY_FILE}" ]]; then
   sync_ruleset_file "$POLICY_FILE"
 else
   policy_files=()

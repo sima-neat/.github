@@ -10,6 +10,15 @@ on:
       - "tests/test_org_rulesets.py"
       - ".github/workflows/enforce-org-rulesets.yml"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Verify App API access without writes, or apply the ruleset policy.
+        type: choice
+        required: true
+        default: verify
+        options:
+          - verify
+          - apply
   schedule:
     - cron: "22 * * * *"
   push:
@@ -49,18 +58,44 @@ jobs:
     environment: org-policy
     env:
       ORG_NAME: sima-neat
-      ORG_ADMIN_TOKEN: ${{ secrets.ORG_ADMIN_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Validate required secret
+      - name: Validate GitHub App configuration
+        env:
+          APP_CLIENT_ID: ${{ vars.ACCESS_POLICY_APP_CLIENT_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.ACCESS_POLICY_APP_PRIVATE_KEY }}
         run: |
-          if [[ -z "${ORG_ADMIN_TOKEN}" ]]; then
-            echo "Missing secret. Set ORG_ADMIN_TOKEN in environment org-policy."
-            echo "Token must be allowed to administer organizations in this org."
+          if [[ -z "${APP_CLIENT_ID}" || -z "${APP_PRIVATE_KEY}" ]]; then
+            echo "Set ACCESS_POLICY_APP_CLIENT_ID (variable) and ACCESS_POLICY_APP_PRIVATE_KEY (secret) in environment org-policy."
+            echo "See policies/org-rulesets/README.md for GitHub App permissions."
             exit 1
           fi
 
+      - name: Create ruleset policy installation token
+        id: app-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
+        with:
+          client-id: ${{ vars.ACCESS_POLICY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ACCESS_POLICY_APP_PRIVATE_KEY }}
+          owner: ${{ env.ORG_NAME }}
+          permission-organization-administration: write
+          permission-members: read
+
+      - name: Record automation identity
+        env:
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          INSTALLATION_ID: ${{ steps.app-token.outputs.installation-id }}
+        run: echo "Syncing rulesets as GitHub App ${APP_SLUG} (installation ${INSTALLATION_ID})"
+
+      - name: Verify App API access without writes
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: ./scripts/sync-org-rulesets.sh --check-access
+
       - name: Sync org rulesets
+        if: github.event_name != 'workflow_dispatch' || inputs.mode == 'apply'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: ./scripts/sync-org-rulesets.sh

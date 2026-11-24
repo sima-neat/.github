@@ -4,10 +4,40 @@ Use this directory to define organization-wide GitHub rulesets. Each top-level `
 are a template and an explicit repository-to-owner-team mapping, not standalone
 rulesets. Branch-specific behavior is split when the rules differ.
 
-The sync script creates or updates rulesets by `name`. Tokens must have
-organization administration write permission. Use a dedicated `ORG_ADMIN_TOKEN`
-stored in the `org-policy` environment; the workflow intentionally does not
-fall back to a generic GitHub token.
+The sync script creates or updates rulesets by `name`. The workflow uses the
+existing `palette-org-admin` App and `org-policy` environment configuration:
+`ACCESS_POLICY_APP_CLIENT_ID` (variable) and `ACCESS_POLICY_APP_PRIVATE_KEY`
+(secret). It creates a short-lived installation token, records the App identity,
+and passes the token only to the sync step through `GH_TOKEN`. There is no
+legacy personal-token or workflow-token fallback. PR validation receives no App
+credentials; checkout uses the ordinary read-only workflow token.
+
+The App installation must approve these permissions:
+
+| Scope | Permission | Level | Purpose |
+|---|---|---|---|
+| Organization | Administration | write | List, create, update and verify organization rulesets |
+| Organization | Members | read | Resolve configured owner-team slugs |
+
+Organization Administration is distinct from the App's existing **repository**
+Administration permission used by Access Policy. Enable and approve the
+organization permission on the existing installation before running privileged
+ruleset sync. The token action requests only the two permissions above and
+fails if the installation cannot grant them. It revokes the token at job end.
+No change to App keys or team membership is required.
+
+For an authorized local run, export a short-lived App installation token as
+`GH_TOKEN` without logging it. A local CLI personal-token scope failure does not
+establish that the App is blocked. Verify the App-authenticated endpoint instead.
+Manual workflow dispatch defaults to `mode=verify`: it mints the App token,
+resolves configured teams and lists all organization-ruleset pages without
+writes. This checks App access without applying the unqualified Linux policy.
+`mode=apply` explicitly runs the sync after that check; push/scheduled runs
+continue to enforce the policy. The equivalent local check is
+`scripts/sync-org-rulesets.sh --check-access`.
+
+See [GitHub's organization rules API](https://docs.github.com/en/rest/orgs/rules)
+and [the App token action](https://github.com/actions/create-github-app-token).
 
 Branch protection rulesets should start in `evaluate` mode for initial rollout.
 After rule insights show the expected impact, change `enforcement` to `active`.

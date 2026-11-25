@@ -111,11 +111,9 @@ require a maintainer. Automatic High requires an evidenced bug with high
 confidence. Edits, reopens, reruns and manual dispatches can produce a comment
 recommendation. Dry runs report the proposed action.
 
-For label cleanup, configure `labels.deprecated` and run the `migrate-labels`
-subcommand with `--dry-run true`. Review categories and supply ambiguous choices
-through `--assignments`, a JSON object mapping issue/PR numbers to categories.
-Applying the migration records release/closure annotations before removing
-deprecated labels and verifies they are unused before deleting definitions.
+To verify the workflow token, dispatch **Test Issue Triage** with
+`verify_priority` enabled. It creates a controlled issue, writes and reads back
+Priority, then closes the issue. Pull requests run the unit regressions.
 
 ## Extended Analysis
 

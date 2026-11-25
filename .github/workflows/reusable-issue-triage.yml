@@ -17,11 +17,6 @@ on:
         required: false
         type: string
         default: .github/issue-triage
-      shared_workflow_ref:
-        description: Shared implementation ref, for validating a triage change before merge.
-        required: false
-        type: string
-        default: main
       codex_model:
         description: Optional Codex model override.
         required: false
@@ -50,14 +45,14 @@ jobs:
         uses: actions/checkout@v6
         with:
           path: caller-repo
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.event.repository.default_branch }}
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
 
       - name: Check out shared triage runner
         uses: actions/checkout@v6
         with:
           repository: sima-neat/.github
-          ref: ${{ inputs.shared_workflow_ref }}
+          ref: main
           path: shared-github
           persist-credentials: false
 

@@ -356,7 +356,8 @@ def find_existing_triage_comment(comments: list[Any]) -> dict[str, Any] | None:
 def priority_assignment(config: dict[str, Any], proposal: dict[str, Any], issue_number: int) -> dict[str, Any]:
     value = proposal.get("priority", "")
     result = {"recommended": value, "assign": False, "reason": "recommendation only"}
-    if not config.get("automation", {}).get("apply_priority", False):
+    automation = config.get("automation", {})
+    if not isinstance(automation, dict) or not automation.get("apply_priority", False):
         return result
     for field, limit in (("priority_reason", 500), ("priority_evidence", 1000)):
         value_text = proposal.get(field, "")
@@ -437,7 +438,7 @@ def apply_proposal(args: argparse.Namespace) -> None:
         labels_to_apply = []
         disallowed = labels
     labels_to_remove = []
-    if apply_labels and labels_cfg.get("categories"):
+    if apply_labels and isinstance(labels_cfg, dict) and labels_cfg.get("categories"):
         categories = set(labels_cfg["categories"]) & allowed_labels
         category = proposal.get("category")
         current_issue = api_request("GET", f"/repos/{repo}/issues/{issue_number}", token)
@@ -457,6 +458,7 @@ def apply_proposal(args: argparse.Namespace) -> None:
     priority_note = ""
     if automation.get("apply_priority") and proposal.get("priority") and proposal.get("priority_reason"):
         priority_note = f"\n\nPriority recommendation is {proposal['priority']}. {proposal['priority_reason']}"
+        priority_note = priority_note[: max_comment_chars - 20]
     comment_limit = max_comment_chars - len(priority_note)
     if len(comment) > comment_limit:
         comment = comment[: comment_limit - 20].rstrip() + "\n\n[truncated]"
@@ -502,59 +504,6 @@ def require_env(name: str) -> str:
     return value
 
 
-def migrate_labels(args: argparse.Namespace) -> None:
-    token = require_env("GITHUB_TOKEN")
-    repo = require_env("GITHUB_REPOSITORY")
-    config = read_json(resolve_repo_triage_path(args.repo_triage_path) / "config.json")
-    categories = set(config["labels"]["categories"])
-    deprecated = set(config["labels"]["deprecated"])
-    assignments = read_json(Path(args.assignments)) if args.assignments else {}
-    issues = api_paginated(f"/repos/{repo}/issues?state=all", token)
-    plan = []
-    for issue in issues:
-        labels = {label["name"] for label in issue["labels"]}
-        primary = labels & categories
-        if not labels & deprecated and len(primary) <= 1:
-            continue
-        category = assignments.get(str(issue["number"]))
-        if category is None and len(primary) == 1:
-            category = next(iter(primary))
-        if category is not None and category not in categories:
-            raise SystemExit(f"Invalid migration category for #{issue['number']}: {category!r}")
-        plan.append({
-            "number": issue["number"], "title": issue["title"],
-            "category": category, "remove": sorted((labels & (deprecated | categories)) - {category}),
-            "preserve": sorted(labels & {"patch-candidate", "duplicate", "invalid", "wontfix"}),
-        })
-    print(json.dumps({"dry_run": args.dry_run == "true", "issues": plan}, indent=2))
-    if args.dry_run == "true":
-        return
-    unresolved = [item["number"] for item in plan if item["category"] is None]
-    if unresolved:
-        raise SystemExit(f"Supply --assignments with a category for these issues/PRs: {unresolved}")
-    marker = "<!-- sima-neat-label-migration -->"
-    for item in plan:
-        path = f"/repos/{repo}/issues/{item['number']}"
-        if item["preserve"]:
-            comments = api_paginated(f"{path}/comments", token)
-            if not any(marker in (comment.get("body") or "") for comment in comments):
-                names = ", ".join(f"`{label}`" for label in item["preserve"])
-                api_request("POST", f"{path}/comments", token, {
-                    "body": f"{marker}\nBefore label cleanup, this issue carried {names}. This records its previous release or closure annotation.",
-                })
-        api_request("POST", f"{path}/labels", token, {"labels": [item["category"]]})
-        current = api_request("GET", path, token)
-        for label in {label["name"] for label in current["labels"]} & set(item["remove"]):
-            api_request("DELETE", f"{path}/labels/{urllib.parse.quote(label, safe='')}", token)
-    existing = {label["name"] for label in api_paginated(f"/repos/{repo}/labels", token)}
-    for label in sorted(deprecated & existing):
-        encoded = urllib.parse.quote(label, safe="")
-        remaining = api_request("GET", f"/repos/{repo}/issues?state=all&labels={encoded}&per_page=1", token)
-        if remaining:
-            raise SystemExit(f"Label {label!r} is still used; rerun the migration preview")
-        api_request("DELETE", f"/repos/{repo}/labels/{encoded}", token)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -581,12 +530,6 @@ def main() -> None:
     apply_cmd.add_argument("--proposal", required=True)
     apply_cmd.add_argument("--dry-run", required=True)
     apply_cmd.set_defaults(func=apply_proposal)
-
-    migrate = subparsers.add_parser("migrate-labels")
-    migrate.add_argument("--repo-triage-path", required=True)
-    migrate.add_argument("--assignments", help="JSON object mapping issue/PR numbers to reviewed categories")
-    migrate.add_argument("--dry-run", choices=["true", "false"], default="true")
-    migrate.set_defaults(func=migrate_labels)
 
     args = parser.parse_args()
     args.func(args)

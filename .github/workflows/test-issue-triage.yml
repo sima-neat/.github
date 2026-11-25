@@ -1,6 +1,12 @@
 name: Test Issue Triage
 
 on:
+  workflow_dispatch:
+    inputs:
+      verify_priority:
+        description: Verify the workflow token on a temporary issue.
+        type: boolean
+        default: false
   pull_request:
     paths:
       - scripts/issue_triage.py
@@ -29,7 +35,7 @@ jobs:
 
   priority-api:
     needs: unit
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch' && inputs.verify_priority
     runs-on: ubuntu-latest
     permissions:
       contents: read

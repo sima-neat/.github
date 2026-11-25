@@ -273,6 +273,15 @@
       "repos": {
         "linux": "maintain"
       }
+    },
+    "owners-vulcan": {
+      "name": "owners-vulcan",
+      "description": "Code owners and repository administrators for Vulcan",
+      "privacy": "closed",
+      "org_roles": [],
+      "repos": {
+        "vulcan": "admin"
+      }
     }
   },
   "legacy_teams": {

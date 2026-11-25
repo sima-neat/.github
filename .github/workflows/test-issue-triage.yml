@@ -1,0 +1,43 @@
+name: Test Issue Triage
+
+on:
+  pull_request:
+    paths:
+      - scripts/issue_triage.py
+      - schemas/issue-triage-result.schema.json
+      - tests/test_issue_triage.py
+      - tests/verify_issue_priority.py
+      - .github/workflows/reusable-issue-triage.yml
+      - .github/workflows/test-issue-triage.yml
+  push:
+    branches: [main]
+    paths:
+      - scripts/issue_triage.py
+      - schemas/issue-triage-result.schema.json
+      - tests/test_issue_triage.py
+      - .github/workflows/reusable-issue-triage.yml
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 -m unittest discover -s tests -p test_issue_triage.py -v
+
+  priority-api:
+    needs: unit
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify Priority assignment with the workflow token
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONPATH: .
+        run: python3 tests/verify_issue_priority.py

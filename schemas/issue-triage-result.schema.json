@@ -13,7 +13,10 @@
     "extended_analysis_repos",
     "extended_analysis_reason",
     "needs_human_review",
-    "public_comment"
+    "public_comment",
+    "priority",
+    "priority_reason",
+    "priority_evidence"
   ],
   "properties": {
     "summary": {
@@ -24,9 +27,11 @@
       "type": "string",
       "enum": [
         "bug",
+        "feature",
         "enhancement",
         "documentation",
         "question",
+        "ci",
         "task",
         "unknown"
       ]
@@ -70,6 +75,24 @@
     "public_comment": {
       "type": "string",
       "maxLength": 2000
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "",
+        "Urgent",
+        "High",
+        "Medium",
+        "Low"
+      ]
+    },
+    "priority_reason": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "priority_evidence": {
+      "type": "string",
+      "maxLength": 1000
     }
   }
 }

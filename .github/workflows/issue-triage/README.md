@@ -99,6 +99,24 @@ Repo-local files are provided to Codex as context. Codex proposes labels and a
 public triage comment, but the shared runner script applies only labels present
 in `labels.allowed`.
 
+Repositories can opt into exclusive work categories using `labels.categories`.
+The runner replaces the current category with the proposal's category and
+preserves unrelated labels. Labels listed in `labels.managed`, such as
+`needs-repro`, are removed when omitted from a later proposal.
+
+Set `automation.apply_priority` to `true` and `priority_field_id` to the native
+issue field's numeric ID to enable priority assignment. The runner fills an
+empty field only on the first `issues.opened` run. Urgent and High for features
+require a maintainer. Automatic High requires an evidenced bug with high
+confidence. Edits, reopens, reruns and manual dispatches can produce a comment
+recommendation. Dry runs report the proposed action.
+
+For label cleanup, configure `labels.deprecated` and run the `migrate-labels`
+subcommand with `--dry-run true`. Review categories and supply ambiguous choices
+through `--assignments`, a JSON object mapping issue/PR numbers to categories.
+Applying the migration records release/closure annotations before removing
+deprecated labels and verifies they are unused before deleting definitions.
+
 ## Extended Analysis
 
 Codex can request an extended-analysis pass by returning

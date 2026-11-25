@@ -2,3 +2,4 @@ self-hosted-runner:
   labels:
     - sdk-build
     - bridge
+    - issue-triage

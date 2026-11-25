@@ -115,6 +115,32 @@ The `owners-code` team owns the repository's files in CODEOWNERS.
 
 The `cloud` team has maintain access to `vulcan`, `arthas`, and `kerrigan`.
 
+The `owners-vulcan` team has **admin** access to `vulcan` only, with no
+organization roles. Its members own repository administration, including the
+Terraform preview and production approval environments. This is a deliberate
+repo-specific exception to the usual `maintain` stewardship grant.
+
+Initial membership must be configured in GitHub after the policy creates the
+team; the sync script does not manage team membership:
+
+| Person | GitHub login |
+|---|---|
+| Jim | `shanguangzai` |
+| Oleksii | `oleksiitsybulskyi-sima` |
+| Yevhen | `yevhenkozohlodiuk-sima` |
+
+Verify all three have active team membership and effective repository admin
+access before relying on the delegation. Membership grants full repository
+administration, not just permission to approve deployments.
+
+Vulcan should reference `@sima-neat/owners-vulcan` in its CODEOWNERS file on both
+`develop` and `main`. CODEOWNERS assigns review responsibility; the grant in
+this policy supplies admin access. That repository change is separate from
+this policy. Configure the team as the required reviewer for `terraform-plan`
+and `terraform-production`, with one approval sufficient and production
+restricted to the `main` branch. Existing contributor and stewardship grants
+are preserved.
+
 The private `blogs` repository uses the following team grants:
 
 | Team | Repository permission |

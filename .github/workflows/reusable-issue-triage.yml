@@ -26,6 +26,10 @@ on:
       cross_repo_token:
         description: Optional token with read access to configured cross-reference repositories.
         required: false
+    outputs:
+      priority_action:
+        description: Initial high_assigned or urgent_recommended action; empty otherwise.
+        value: ${{ jobs.triage.outputs.priority_action }}
 
 permissions:
   contents: read
@@ -34,11 +38,14 @@ permissions:
 jobs:
   triage:
     name: Triage issue
+    outputs:
+      priority_action: ${{ steps.apply.outputs.priority_action }}
     runs-on: [self-hosted, issue-triage]
     timeout-minutes: 20
     concurrency:
       group: issue-triage-${{ github.repository }}-${{ inputs.issue_number }}
-      cancel-in-progress: true
+      cancel-in-progress: false
+      queue: max
 
     steps:
       - name: Check out caller repository
@@ -110,10 +117,13 @@ jobs:
           Produce JSON only, with this shape:
           {
             "summary": "One sentence summary of the issue.",
-            "category": "bug|enhancement|documentation|question|task|unknown",
+            "category": "bug|feature|enhancement|documentation|ci|question|task|unknown",
             "area": "short area name or unknown",
             "confidence": "low|medium|high",
             "labels": ["only labels explicitly allowed by repo_triage_config.labels.allowed"],
+            "priority": "Urgent|High|Medium|Low, or empty string when essential evidence is missing",
+            "priority_reason": "One sentence explaining impact and available workarounds, or empty string.",
+            "priority_evidence": "Concrete reproduction or observed evidence establishing High or Urgent impact, or empty string.",
             "extended_analysis_required": false,
             "extended_analysis_repos": ["only repositories listed by repo_triage_config.cross_reference_repos when more analysis is needed"],
             "extended_analysis_reason": "Short reason, or empty string.",
@@ -128,6 +138,12 @@ jobs:
           - Do not propose repository writes, workflow changes, or credential access as part of automated triage.
           - Do not include private/internal-only details in public_comment.
           - If labels.allowed is missing or empty, return an empty labels list.
+          - If labels.categories is configured, choose one of those primary labels and match category to it. Use unknown when evidence is insufficient to classify.
+          - Propose priority only when automation.apply_priority is true. Otherwise return empty priority fields.
+          - Base priority on impact and workarounds. Urgent needs human assignment. High is eligible in any category.
+          - Recommend High or Urgent only with high confidence and concrete evidence quoted in priority_evidence. Automatic High also requires needs_human_review false. Urgent recommendations require needs_human_review true. A claim such as "release blocker" alone leaves priority empty and needs a focused question.
+          - Leave priority empty when essential information is missing. Follow the repo's priority definitions.
+          - Keep priority explanations in priority_reason; the runner appends that sentence to the public comment.
           - Request extended analysis only when the issue has enough specifics to justify code or docs inspection in another repo.
           - Request only repos listed in repo_triage_config.cross_reference_repos.
           - If confidence is low, use needs_human_review true and keep the comment conservative.
@@ -213,10 +229,13 @@ jobs:
           Produce final JSON only, with this shape:
           {
             "summary": "One sentence summary of the issue.",
-            "category": "bug|enhancement|documentation|question|task|unknown",
+            "category": "bug|feature|enhancement|documentation|ci|question|task|unknown",
             "area": "short area name or unknown",
             "confidence": "low|medium|high",
             "labels": ["only labels explicitly allowed by repo_triage_config.labels.allowed"],
+            "priority": "Urgent|High|Medium|Low, or empty string when essential evidence is missing",
+            "priority_reason": "One sentence explaining impact and available workarounds, or empty string.",
+            "priority_evidence": "Concrete reproduction or observed evidence establishing High or Urgent impact, or empty string.",
             "extended_analysis_required": false,
             "extended_analysis_repos": [],
             "extended_analysis_reason": "Short note about what was checked.",
@@ -231,6 +250,12 @@ jobs:
           - Do not propose repository writes, workflow changes, or credential access as part of automated triage.
           - Do not include private/internal-only details in public_comment.
           - Keep public_comment focused on the issue reporter. Do not mention internal file paths unless directly useful.
+          - If labels.categories is configured, choose one of those primary labels and match category to it. Use unknown when evidence is insufficient to classify.
+          - Propose priority only when automation.apply_priority is true. Otherwise return empty priority fields.
+          - Base priority on impact and workarounds. Urgent needs human assignment. High is eligible in any category.
+          - Recommend High or Urgent only with high confidence and concrete evidence quoted in priority_evidence. Automatic High also requires needs_human_review false. Urgent recommendations require needs_human_review true. A claim such as "release blocker" alone leaves priority empty and needs a focused question.
+          - Leave priority empty when essential information is missing. Follow the repo's priority definitions.
+          - Keep priority explanations in priority_reason; the runner appends that sentence to the public comment.
           - Keep public_comment useful to the reporter; do not include a mechanical label list unless it adds context.
           PROMPT
 
@@ -261,6 +286,7 @@ jobs:
             --proposal "${RUNNER_TEMP}/triage-proposal.json"
 
       - name: Apply safe triage proposal
+        id: apply
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |

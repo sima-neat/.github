@@ -99,6 +99,30 @@ Repo-local files are provided to Codex as context. Codex proposes labels and a
 public triage comment, but the shared runner script applies only labels present
 in `labels.allowed`.
 
+Repositories can opt into exclusive work categories using `labels.categories`.
+The runner replaces the current category with the proposal's category and
+preserves unrelated labels. Labels listed in `labels.managed`, such as
+`needs-repro`, are removed when omitted from a later proposal.
+
+Set `automation.apply_priority` to `true` and `priority_field_id` to the native
+issue field's numeric ID to enable priority assignment. The runner fills an
+empty field only on the first `issues.opened` run. Urgent requires a maintainer.
+Automatic High is eligible in any category with concrete evidence, high confidence,
+and no pending human review. Edits, reopens, reruns and manual dispatches can
+produce a comment recommendation. Dry runs report the proposed action.
+Runs for the same issue queue without replacing earlier runs, so an edit cannot
+cancel the only run allowed to assign Priority.
+
+The workflow's `priority_action` output is `high_assigned` after a verified High
+write or `urgent_recommended` for an evidenced initial Urgent recommendation.
+Otherwise it is empty, including dry runs. Callers may use this output for their
+own notifications. The shared workflow does not connect to Slack or receive a
+Slack token.
+
+To verify the workflow token, dispatch **Test Issue Triage** with
+`verify_priority` enabled. It creates a controlled issue, writes and reads back
+Priority, then closes the issue. Pull requests run the unit regressions.
+
 ## Extended Analysis
 
 Codex can request an extended-analysis pass by returning

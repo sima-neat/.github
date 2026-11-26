@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -26,7 +27,10 @@ DEFAULT_TRIAGE_MAX_FILES = 20
 DEFAULT_MAX_EXTENDED_REPOS = 2
 
 
-def api_request(method: str, path: str, token: str, payload: dict[str, Any] | None = None) -> Any:
+def api_request(
+    method: str, path: str, token: str, payload: dict[str, Any] | None = None,
+    *, api_version: str = "2022-11-28",
+) -> Any:
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         f"{API_BASE}{path}",
@@ -36,7 +40,7 @@ def api_request(method: str, path: str, token: str, payload: dict[str, Any] | No
             "Accept": "application/vnd.github+json",
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
-            "X-GitHub-Api-Version": "2022-11-28",
+            "X-GitHub-Api-Version": api_version,
         },
     )
     try:
@@ -349,6 +353,67 @@ def find_existing_triage_comment(comments: list[Any]) -> dict[str, Any] | None:
     return None
 
 
+def priority_assignment(config: dict[str, Any], proposal: dict[str, Any], issue_number: int) -> dict[str, Any]:
+    value = proposal.get("priority", "")
+    result = {"recommended": value, "assign": False, "action": "", "reason": "recommendation only"}
+    automation = config.get("automation", {})
+    if not isinstance(automation, dict) or not automation.get("apply_priority", False):
+        return result
+    for field, limit in (("priority_reason", 500), ("priority_evidence", 1000)):
+        value_text = proposal.get(field, "")
+        if not isinstance(value_text, str) or len(value_text) > limit:
+            raise SystemExit(f"Proposal field {field} must be a string of at most {limit} characters")
+    event = read_json(Path(require_env("GITHUB_EVENT_PATH")))
+    if (os.environ.get("GITHUB_EVENT_NAME") != "issues" or event.get("action") != "opened"
+            or os.environ.get("GITHUB_RUN_ATTEMPT") != "1"
+            or event.get("issue", {}).get("number") != issue_number):
+        return result
+    if value not in {"Urgent", "High", "Medium", "Low"}:
+        return result
+    if (not proposal.get("priority_reason", "").strip() or "needs-repro" in proposal.get("labels", [])
+            or proposal.get("category") == "unknown" or proposal.get("confidence") == "low"):
+        result["reason"] = "missing information"
+        return result
+    if value in {"Urgent", "High"} and (
+        proposal.get("confidence") != "high" or not proposal.get("priority_evidence", "").strip()
+    ):
+        result["reason"] = "High and Urgent require concrete evidence and high confidence"
+        return result
+    if value == "Urgent":
+        result.update(action="urgent_recommended", reason="Urgent requires human assignment")
+        return result
+    if value == "High" and proposal.get("needs_human_review"):
+        result["reason"] = "High requires human review"
+        return result
+    field_id = config.get("priority_field_id")
+    if isinstance(field_id, bool) or not isinstance(field_id, int) or field_id <= 0:
+        raise SystemExit("Priority assignment requires a positive priority_field_id")
+    result.update(assign=True, field_id=field_id, reason="initial issue creation")
+    return result
+
+
+def set_priority(repo: str, issue_number: int, token: str, decision: dict[str, Any], dry_run: bool) -> None:
+    if not decision["assign"]:
+        return
+    path = f"/repos/{repo}/issues/{issue_number}/issue-field-values"
+    fields = api_request("GET", path, token, api_version="2026-03-10")
+    current = next((field for field in fields if field["issue_field_id"] == decision["field_id"]), None)
+    if current and current.get("value") is not None:
+        decision.update(assign=False, reason="Priority already assigned")
+        return
+    if dry_run:
+        return
+    api_request("POST", path, token, {
+        "issue_field_values": [{"field_id": decision["field_id"], "value": decision["recommended"]}],
+    }, api_version="2026-03-10")
+    fields = api_request("GET", path, token, api_version="2026-03-10")
+    assigned = next((field for field in fields if field["issue_field_id"] == decision["field_id"]), {})
+    if assigned.get("single_select_option", {}).get("name") != decision["recommended"]:
+        raise SystemExit("Priority read-back did not match the requested value")
+    if decision["recommended"] == "High":
+        decision["action"] = "high_assigned"
+
+
 def apply_proposal(args: argparse.Namespace) -> None:
     token = require_env("GITHUB_TOKEN")
     repo = require_env("GITHUB_REPOSITORY")
@@ -379,19 +444,41 @@ def apply_proposal(args: argparse.Namespace) -> None:
     else:
         labels_to_apply = []
         disallowed = labels
+    labels_to_remove = []
+    if apply_labels and isinstance(labels_cfg, dict) and labels_cfg.get("categories"):
+        categories = set(labels_cfg["categories"]) & allowed_labels
+        category = proposal.get("category")
+        current_issue = api_request("GET", f"/repos/{repo}/issues/{issue_number}", token)
+        current_labels = {label["name"] for label in current_issue["labels"]}
+        managed = set(labels_cfg.get("managed", [])) & allowed_labels
+        labels_to_apply = [label for label in labels_to_apply if label not in categories]
+        if category in categories:
+            labels_to_apply.insert(0, category)
+            managed.update(categories)
+        labels_to_remove = sorted((current_labels & managed) - set(labels_to_apply))
+    priority = priority_assignment(config, proposal, issue_number)
     comment = proposal.get("public_comment") or proposal.get("comment") or ""
     if comment is None:
         comment = ""
     if not isinstance(comment, str):
         raise SystemExit("Proposal field public_comment must be a string")
-    if len(comment) > max_comment_chars:
-        comment = comment[: max_comment_chars - 20].rstrip() + "\n\n[truncated]"
+    priority_note = ""
+    if automation.get("apply_priority") and proposal.get("priority") and proposal.get("priority_reason"):
+        priority_note = f"\n\nPriority recommendation is {proposal['priority']}. {proposal['priority_reason']}"
+        priority_note = priority_note[: max_comment_chars - 20]
+    comment_limit = max_comment_chars - len(priority_note)
+    if len(comment) > comment_limit:
+        comment = comment[: comment_limit - 20].rstrip() + "\n\n[truncated]"
+    comment += priority_note
+    set_priority(repo, issue_number, token, priority, dry_run)
 
     summary = {
         "dry_run": dry_run,
         "labels_requested": labels,
         "labels_to_apply": labels_to_apply,
         "labels_skipped": disallowed,
+        "labels_to_remove": labels_to_remove,
+        "priority": priority,
         "post_comment": bool(comment and post_comment),
         "comment_mode": "update-or-create",
         "comment_chars": len(comment),
@@ -403,6 +490,9 @@ def apply_proposal(args: argparse.Namespace) -> None:
 
     if apply_labels and labels_to_apply:
         api_request("POST", f"/repos/{owner}/{name}/issues/{issue_number}/labels", token, {"labels": labels_to_apply})
+    for label in labels_to_remove:
+        encoded = urllib.parse.quote(label, safe="")
+        api_request("DELETE", f"/repos/{repo}/issues/{issue_number}/labels/{encoded}", token)
 
     if post_comment and comment:
         body = format_triage_comment(comment)
@@ -412,6 +502,11 @@ def apply_proposal(args: argparse.Namespace) -> None:
             api_request("PATCH", f"/repos/{owner}/{name}/issues/comments/{existing['id']}", token, {"body": body})
         else:
             api_request("POST", f"/repos/{owner}/{name}/issues/{issue_number}/comments", token, {"body": body})
+
+    github_output = os.environ.get("GITHUB_OUTPUT")
+    if github_output:
+        with open(github_output, "a", encoding="utf-8") as output:
+            output.write(f"priority_action={priority['action']}\n")
 
 
 def require_env(name: str) -> str:

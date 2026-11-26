@@ -355,7 +355,7 @@ def find_existing_triage_comment(comments: list[Any]) -> dict[str, Any] | None:
 
 def priority_assignment(config: dict[str, Any], proposal: dict[str, Any], issue_number: int) -> dict[str, Any]:
     value = proposal.get("priority", "")
-    result = {"recommended": value, "assign": False, "reason": "recommendation only"}
+    result = {"recommended": value, "assign": False, "action": "", "reason": "recommendation only"}
     automation = config.get("automation", {})
     if not isinstance(automation, dict) or not automation.get("apply_priority", False):
         return result
@@ -368,17 +368,22 @@ def priority_assignment(config: dict[str, Any], proposal: dict[str, Any], issue_
             or os.environ.get("GITHUB_RUN_ATTEMPT") != "1"
             or event.get("issue", {}).get("number") != issue_number):
         return result
-    if value not in {"High", "Medium", "Low"}:
+    if value not in {"Urgent", "High", "Medium", "Low"}:
         return result
     if (not proposal.get("priority_reason", "").strip() or "needs-repro" in proposal.get("labels", [])
             or proposal.get("category") == "unknown" or proposal.get("confidence") == "low"):
         result["reason"] = "missing information"
         return result
-    if value == "High" and (
-        proposal.get("category") != "bug" or proposal.get("confidence") != "high"
-        or not proposal.get("priority_evidence", "").strip() or proposal.get("needs_human_review")
+    if value in {"Urgent", "High"} and (
+        proposal.get("confidence") != "high" or not proposal.get("priority_evidence", "").strip()
     ):
-        result["reason"] = "High requires an evidenced bug"
+        result["reason"] = "High and Urgent require concrete evidence and high confidence"
+        return result
+    if value == "Urgent":
+        result.update(action="urgent_recommended", reason="Urgent requires human assignment")
+        return result
+    if value == "High" and proposal.get("needs_human_review"):
+        result["reason"] = "High requires human review"
         return result
     field_id = config.get("priority_field_id")
     if isinstance(field_id, bool) or not isinstance(field_id, int) or field_id <= 0:
@@ -405,6 +410,8 @@ def set_priority(repo: str, issue_number: int, token: str, decision: dict[str, A
     assigned = next((field for field in fields if field["issue_field_id"] == decision["field_id"]), {})
     if assigned.get("single_select_option", {}).get("name") != decision["recommended"]:
         raise SystemExit("Priority read-back did not match the requested value")
+    if decision["recommended"] == "High":
+        decision["action"] = "high_assigned"
 
 
 def apply_proposal(args: argparse.Namespace) -> None:
@@ -495,6 +502,11 @@ def apply_proposal(args: argparse.Namespace) -> None:
             api_request("PATCH", f"/repos/{owner}/{name}/issues/comments/{existing['id']}", token, {"body": body})
         else:
             api_request("POST", f"/repos/{owner}/{name}/issues/{issue_number}/comments", token, {"body": body})
+
+    github_output = os.environ.get("GITHUB_OUTPUT")
+    if github_output:
+        with open(github_output, "a", encoding="utf-8") as output:
+            output.write(f"priority_action={priority['action']}\n")
 
 
 def require_env(name: str) -> str:

@@ -110,6 +110,8 @@ empty field only on the first `issues.opened` run. Urgent requires a maintainer.
 Automatic High is eligible in any category with concrete evidence, high confidence,
 and no pending human review. Edits, reopens, reruns and manual dispatches can
 produce a comment recommendation. Dry runs report the proposed action.
+Runs for the same issue queue without replacing earlier runs, so an edit cannot
+cancel the only run allowed to assign Priority.
 
 The workflow's `priority_action` output is `high_assigned` after a verified High
 write or `urgent_recommended` for an evidenced initial Urgent recommendation.

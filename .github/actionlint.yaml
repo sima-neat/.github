@@ -3,3 +3,9 @@ self-hosted-runner:
     - sdk-build
     - bridge
     - issue-triage
+
+paths:
+  .github/workflows/reusable-issue-triage.yml:
+    ignore:
+      # GitHub supports queue; actionlint does not yet: https://github.com/rhysd/actionlint/issues/657
+      - '^unexpected key "queue" for "concurrency" section\.'

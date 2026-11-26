@@ -118,6 +118,23 @@ class IssueTriageTest(unittest.TestCase):
                 self.assertEqual(self.fields, [])
                 self.assertEqual(self.output_path.read_text(), 'priority_action=\n')
 
+    def test_queued_edit_preserves_initial_priority_and_does_not_repeat_alert(self):
+        self.proposal.update(priority='High', priority_evidence='The supplied command loses every frame.')
+        self.apply()
+        self.assertEqual(self.output_path.read_text(), 'priority_action=high_assigned\n')
+
+        self.event_path.write_text(json.dumps({'action': 'edited', 'issue': {'number': 1}}))
+        self.proposal.update(priority='Urgent', needs_human_review=True,
+                             priority_evidence='The updated report includes a release failure.')
+        self.apply()
+
+        self.assertEqual(len(self.priority_writes()), 1)
+        self.assertEqual(self.fields[0]['single_select_option']['name'], 'High')
+        self.assertEqual(self.output_path.read_text(), 'priority_action=\n')
+        self.assertEqual(len(self.comments), 1)
+        self.assertTrue(any(method == 'PATCH' and '/issues/comments/' in path
+                            for method, path, _ in self.calls))
+
     def test_high_is_available_in_all_categories_with_evidence(self):
         cases = [('feature', 'High', 'Delivery requires the requested capability; no workaround exists.', 'high', False, True),
                  ('enhancement', 'High', 'The current limit blocks the supplied production workflow.', 'high', False, True),
